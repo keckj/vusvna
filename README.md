@@ -26,6 +26,9 @@ affine arithmetic (AF1), see [Differences with cusvna](#differences-with-cusvna)
 * **Generic**: functions written once for a type `T : IReal` are evaluated on affine forms to bound them
   and on floats to compute their values.
 
+Limitations compared to cusvna: single precision only (no `double`), reduced affine arithmetic only (AF1),
+and a subset of the functions, see [Differences with cusvna](#differences-with-cusvna).
+
 Typical applications are robust root isolation and subdivision schemes (quadtrees, octrees), ray tracing
 of implicit surfaces and level sets, and any numerical method that must not miss a solution.
 
@@ -75,6 +78,7 @@ Requirements:
 
 * a Vulkan device, with hardware ray tracing for examples 04 and 05,
 * Slang (tested with the compiler shipped with slangpy 0.43),
+* single precision only: all computations are done in `float`, there is no `double` version,
 * **no fast math** options, see [Guarantees](#guarantees).
 
 ## Affine arithmetic in vusvna
