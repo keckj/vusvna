@@ -1,4 +1,4 @@
-import sys, enum, time, argparse
+import sys, enum, time, argparse, collections
 
 import numpy as np
 import slangpy as spy
@@ -236,16 +236,26 @@ SPACE  pause
 mouse  rotate, zoom
 Q/ESC  quit"""
 
+RenderContext = collections.namedtuple("RenderContext", ["surface_texture", "command_encoder"])
+
 def make_camera():
     return Camera(eye=(0, 6.0, -12.5), look_at=(0, -0.6, 0), up=(0, 1, 0), fov_y=35)
 
 
-class LevelsetWindow(spy.AppWindow):
-    def __init__(self, app, width, height, settings):
-        # the image is already sRGB encoded, the surface must not encode it again
-        super().__init__(app, width=width, height=height, title="Vusvna Interval Marching",
-                         surface_format=spy.Format.bgra8_unorm, enable_vsync=False)
-        self.app = app
+class LevelsetWindow:
+    # spy.AppWindow aborts when the swapchain gets out of date (window resized by the window manager
+    # between acquire and present), so this class runs its own frame loop and recreates the swapchain.
+    def __init__(self, device, width, height, settings):
+        self.device = device
+        self.window = spy.Window(width=width, height=height, title="Vusvna Interval Marching", resizable=True)
+        self.window.on_resize = self.on_resize
+        self.window.on_keyboard_event = self.handle_keyboard_event
+        self.window.on_mouse_event = self.handle_mouse_event
+        self.surface = device.create_surface(self.window)
+        self.surface_dirty = True
+        self.ui_context = spy.ui.Context(device)
+        self.screen = self.ui_context.screen
+        self.running = True
         self.settings = settings
         self.camera = make_camera()
         self.renderer = Renderer(self.device, width, height)
@@ -264,16 +274,61 @@ class LevelsetWindow(spy.AppWindow):
         self.stats_text = ""
 
     def on_resize(self, width, height):
+        self.surface_dirty = True
         if width > 0 and height > 0:
             self.device.wait()
             self.renderer.resize(width, height)
             self.image_changed = True
 
+    def configure_surface(self):
+        self.device.wait()
+        # the image is already sRGB encoded, the surface must not encode it again
+        self.surface.configure(width=self.window.width, height=self.window.height,
+                               format=spy.Format.bgra8_unorm, vsync=False)
+        self.surface_dirty = False
+
+    def handle_keyboard_event(self, event):
+        if not self.ui_context.handle_keyboard_event(event):
+            self.on_keyboard_event(event)
+
+    def handle_mouse_event(self, event):
+        if not self.ui_context.handle_mouse_event(event):
+            self.on_mouse_event(event)
+
+    def run_frame(self):
+        if self.window.width == 0 or self.window.height == 0:
+            return  # minimized
+        if self.surface_dirty:
+            self.configure_surface()
+        try:
+            surface_texture = self.surface.acquire_next_image()
+        except RuntimeError:
+            surface_texture = None
+        if surface_texture is None:
+            self.surface_dirty = True
+            return
+        self.ui_context.begin_frame(surface_texture.width, surface_texture.height, self.window)
+        command_encoder = self.device.create_command_encoder()
+        self.render(RenderContext(surface_texture, command_encoder))
+        self.ui_context.end_frame(surface_texture, command_encoder)
+        self.device.submit_command_buffer(command_encoder.finish())
+        try:
+            self.surface.present()
+        except RuntimeError:
+            self.surface_dirty = True  # VK_ERROR_OUT_OF_DATE_KHR or VK_SUBOPTIMAL_KHR
+
+    def run(self):
+        while self.running and not self.window.should_close():
+            self.window.process_events()
+            self.run_frame()
+        self.device.wait()
+        self.surface.unconfigure()
+
     def on_keyboard_event(self, event):
         s = self.settings
         if event.type == spy.KeyboardEventType.key_press:
             if event.key == spy.KeyCode.escape:
-                self.app.terminate()
+                self.running = False
             elif event.key in (spy.KeyCode.enter, spy.KeyCode.keypad_enter):
                 s.rendering_mode = RenderingMode((s.rendering_mode + 1) % len(RenderingMode))
             elif event.key == spy.KeyCode.space:
@@ -289,7 +344,7 @@ class LevelsetWindow(spy.AppWindow):
             # letters and symbols use the codepoint of the keyboard layout (A is KeyCode.q on AZERTY)
             c = chr(event.codepoint).lower()
             if c == 'q':
-                self.app.terminate()
+                self.running = False
             elif c == 'm':
                 s.marching_method = MarchingMethod((s.marching_method + 1) % len(MarchingMethod))
             elif c == 'a':
@@ -401,6 +456,5 @@ if __name__ == '__main__':
         Image.fromarray(renderer.image.to_numpy(), 'RGBA').save(args.output)
         logger.info(f"Image saved to {args.output}.")
     else:
-        app = spy.App(device)
-        window = LevelsetWindow(app, width, height, settings)
-        app.run()
+        window = LevelsetWindow(device, width, height, settings)
+        window.run()
