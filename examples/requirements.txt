@@ -1,0 +1,7 @@
+numpy
+slangpy
+matplotlib
+Pillow
+open3d
+scikit-image
+screeninfo

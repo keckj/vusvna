@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 180" role="img" aria-labelledby="title desc">
+  <title id="title">vusvna</title>
+  <desc id="desc">Vulkan Self-Validated Numerical Analysis — geometric cube enclosing bounded numerical surfaces</desc>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7777"/>
+      <stop offset="0.5" stop-color="#e32636"/>
+      <stop offset="1" stop-color="#8f1025"/>
+    </linearGradient>
+    <linearGradient id="bounds" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ff8a90" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#ac162c" stop-opacity=".12"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(18 7)" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M76 6 145 45 145 125 76 165 7 125 7 45Z" fill="none" stroke="#ac162c" stroke-width="3.6"/>
+    <path d="M7 45 76 85 145 45M76 85V165" fill="none" stroke="#ac162c" stroke-width="2.5" opacity=".55"/>
+    <path d="M76 6V85M7 125 76 85 145 125" fill="none" stroke="#ac162c" stroke-width="1.5" stroke-dasharray="4 7" opacity=".65"/>
+    <path d="M13 79 C36 95 48 30 76 48 S113 110 139 70 L139 104 C110 133 94 89 76 108 S39 143 13 112Z" fill="url(#bounds)"/>
+    <path d="M13 91 C40 118 49 51 76 64 S112 125 139 87 L139 107 C112 139 95 101 76 119 S39 149 13 116Z" fill="url(#surface)" opacity=".94"/>
+    <path d="M13 91 C40 118 49 51 76 64 S112 125 139 87" fill="none" stroke="#ffb2b7" stroke-width="2.2"/>
+    <path d="M13 79 C36 95 48 30 76 48 S113 110 139 70" fill="none" stroke="#f17c88" stroke-width="1.7"/>
+    <path d="M13 112 C39 143 58 90 76 108 S110 133 139 104" fill="none" stroke="#f17c88" stroke-width="1.7"/>
+  </g>
+  <g font-family="DejaVu Sans, Arial, sans-serif">
+    <text x="190" y="106" font-size="91" font-weight="800" letter-spacing="-6" fill="#697782">vus<tspan fill="#ac162c">vna</tspan></text>
+    <text x="196" y="139" font-size="19" font-weight="500" letter-spacing="1.15" fill="#6e8790">Vulkan Self-Validated Numerical Analysis</text>
+  </g>
+</svg>
