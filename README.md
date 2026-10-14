@@ -15,7 +15,8 @@
 providing computations with **guaranteed error bounds** in Vulkan shaders. It implements
 [affine arithmetic](https://en.wikipedia.org/wiki/Affine_arithmetic) (AA), a model that keeps track of the
 correlations between quantities and therefore yields much tighter bounds than interval arithmetic on long
-computations. It is the Vulkan port of [cusvna](https://github.com/keckj/cusvna).
+computations. It is the Vulkan port of [cusvna](https://github.com/keckj/cusvna), restricted to reduced
+affine arithmetic (AF1), see [Differences with cusvna](#differences-with-cusvna).
 
 * **Rigorous**: the exact real result of a computation always lies within the computed bounds, including
   floating point rounding errors, under the weak guarantees of the Vulkan specification (no directed
@@ -90,14 +91,28 @@ variable created with `AA<N>::variable(k, interval)`. Nonlinear operations appro
 affine function of their input, and their approximation errors, as well as all rounding errors, are
 accumulated in the independent term `err`. Forms therefore never grow and cost `N + 2` floats, but the
 correlations of these errors are lost: `sqr(x) - sqr(x)` is not zero but an interval whose radius is twice
-the error term of `sqr(x)`. cusvna instead creates a new noise symbol for each nonlinear operation and keeps all correlations,
-at the cost of larger forms and of a runtime tag per symbol.
+the error term of `sqr(x)`. AF1 is the only mode of vusvna.
 
 * `AA<N>::variable(k, I)`: the input variable of symbol `k` (`0 <= k < N`), taking all values of `I`.
 * `AA<N>::from_interval(I)`: a quantity taking any value of `I`, uncorrelated with everything else.
 * `AA<N>(c)`, `AA<N>::entire()`: constants and the form representing any real number.
 * `x.interval()`, `x.sign()`, `x.affine_range()`, `x.radius()` (sum of the `|x_i|`, without `err`),
   `x.magnitude(k)`, `x.is_entire()`: conversions back to intervals.
+
+### Differences with cusvna
+
+vusvna follows the design of cusvna and its examples, but it is not exactly equivalent to it and
+the bounds computed by the two libraries differ:
+
+* **Model**: cusvna uses standard affine arithmetic, where each nonlinear operation creates a new noise
+  symbol, identified at compile time by the types of its operands and at runtime by a tag. Forms grow with
+  the computation and keep the correlations of all the approximation errors. This relies on C++ template
+  metaprogramming (the symbols of a form are part of its type) that Slang generics cannot express, so vusvna
+  only provides the reduced model with a fixed number of symbols. Its forms are much smaller and cheaper, its
+  bounds are a bit wider on long computations or wide inputs.
+* **Rounding**: cusvna bounds rounding errors with error-free transformations (TwoSum, TwoProd), vusvna with
+  the standard model of floating point arithmetic, which is more pessimistic (see [Guarantees](#guarantees)).
+* **Functions**: vusvna only implements a subset of the functions of cusvna (see below).
 
 ## Supported operations
 
@@ -198,7 +213,8 @@ jittered samples while the scene is paused.
 
 ### Comparison with cusvna
 
-On an RTX 5090, with the same scenes and settings as the cusvna examples:
+On an RTX 5090, with the same scenes and settings as the cusvna examples (reduced affine arithmetic for vusvna,
+standard affine arithmetic for cusvna, so the timings mix the effects of the platform and of the model):
 
 | Example | vusvna | cusvna |
 |---|---|---|
