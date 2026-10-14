@@ -44,6 +44,23 @@ of implicit surfaces and level sets, and any numerical method that must not miss
   <img src="figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
 </p>
 
+## Getting started
+
+The examples and the tests only need a Vulkan GPU and Python: they compile the Slang shaders at runtime with
+[slangpy](https://github.com/shader-slang/slangpy).
+
+```sh
+git clone https://github.com/keckj/vusvna.git
+cd vusvna
+pip install -r examples/requirements.txt
+python examples/02_quadtree.py     # adaptive quadtree around a 2D curve
+python examples/05_levelset.py     # interactive ray tracing of animated level sets (needs ray tracing)
+python tests/test_vusvna.py        # check the enclosures on your GPU
+```
+
+See [Examples](#examples) for the other scripts and [Installation](#installation) to use vusvna in your own
+shaders.
+
 ## Example
 
 ```slang
