@@ -1,4 +1,4 @@
-import os, logging, pathlib
+import os, logging, pathlib, argparse
 
 import numpy as np
 import slangpy as spy
@@ -18,15 +18,29 @@ logger.propagate = False
 logger.addHandler(stream)
 logger.setLevel(os.environ.get("VUSVNA_LOG_LEVEL", "DEBUG"))
 
-compiler_options = spy.SlangCompilerOptions({"include_paths": [str(vusvna_dir), str(shader_dir)]})
-
-
-def create_device(**kwargs):
-    """Vulkan device that finds the vusvna module and the shaders of the examples."""
-    device = spy.Device(type=spy.DeviceType.vulkan, compiler_options=compiler_options, **kwargs)
+def create_device(ignore_rounding=False, **kwargs):
+    """Vulkan device that finds the vusvna module and the shaders of the examples. ignore_rounding defines
+    VUSVNA_IGNORE_ROUNDING: faster, but the bounds are only estimates (see the README)."""
+    options = {"include_paths": [str(vusvna_dir), str(shader_dir)]}
+    if ignore_rounding:
+        options["defines"] = {"VUSVNA_IGNORE_ROUNDING": "1"}
+    device = spy.Device(type=spy.DeviceType.vulkan, compiler_options=spy.SlangCompilerOptions(options), **kwargs)
     info = device.info
     logger.info(f"Using {info.adapter_name} with {info.api_name}.")
+    if ignore_rounding:
+        logger.warning("Rounding errors are ignored, the bounds are not guaranteed.")
     return device
+
+
+def parse_example_arguments(description, **extra):
+    """Command line of the examples: --fast ignores rounding errors. extra maps the names of additional
+    positional arguments to their help."""
+    parser = argparse.ArgumentParser(description=description)
+    for name, help in extra.items():
+        parser.add_argument(name, nargs="?", help=help)
+    parser.add_argument("--fast", action="store_true",
+                        help="ignore rounding errors (VUSVNA_IGNORE_ROUNDING), the results are no longer rigorous")
+    return parser.parse_args()
 
 
 def load_kernels(device, shader, entry_points):

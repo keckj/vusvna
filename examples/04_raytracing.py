@@ -110,8 +110,10 @@ def launch_pipeline(device, pipeline, shader_table, tlas, centers, radii):
 
 
 if __name__ == "__main__":
+    args = parse_example_arguments("Ray tracing of implicit surfaces with affine arithmetic.",
+                                   output="file name of the rendered image (optional)")
     logger.info("Setting up the Vulkan ray tracing scene...")
-    device = create_device()
+    device = create_device(ignore_rounding=args.fast)
     if not (device.has_feature(spy.Feature.acceleration_structure) and device.has_feature(spy.Feature.ray_tracing)):
         logger.error("This example requires a device with hardware ray tracing support.")
         sys.exit(1)
@@ -126,8 +128,8 @@ if __name__ == "__main__":
     logger.info("Rendering image...")
     img = launch_pipeline(device, pipeline, shader_table, tlas, centers, radii)
     img = ImageOps.flip(Image.fromarray(img, 'RGBA'))
-    if len(sys.argv) > 1:
-        img.save(sys.argv[1])
-        logger.info(f"Image saved to {sys.argv[1]}.")
+    if args.output:
+        img.save(args.output)
+        logger.info(f"Image saved to {args.output}.")
     else:
         img.show()

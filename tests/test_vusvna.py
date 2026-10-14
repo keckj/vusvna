@@ -14,38 +14,39 @@ import slangpy as spy
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LIMIT = 2.0**60
 
-_device = None
+_devices = {}
 _kernels = {}
 
 
-def device():
-    global _device
-    if _device is None:
-        _device = spy.Device(
-            type=spy.DeviceType.vulkan,
-            compiler_options=spy.SlangCompilerOptions({"include_paths": [str(ROOT / "vusvna")]}),
-        )
-    return _device
+def device(ignore_rounding=False):
+    """Vulkan device, with VUSVNA_IGNORE_ROUNDING and fast math if ignore_rounding."""
+    if ignore_rounding not in _devices:
+        options = {"include_paths": [str(ROOT / "vusvna")]}
+        if ignore_rounding:
+            options["defines"] = {"VUSVNA_IGNORE_ROUNDING": "1"}
+            options["floating_point_mode"] = spy.SlangFloatingPointMode.fast
+        _devices[ignore_rounding] = spy.Device(type=spy.DeviceType.vulkan, compiler_options=spy.SlangCompilerOptions(options))
+    return _devices[ignore_rounding]
 
 
-def kernel(entry):
-    if entry not in _kernels:
-        dev = device()
+def kernel(entry, ignore_rounding=False):
+    if (entry, ignore_rounding) not in _kernels:
+        dev = device(ignore_rounding)
         program = dev.load_program(str(ROOT / "tests" / "kernels.slang"), [entry])
-        _kernels[entry] = dev.create_compute_kernel(program)
-    return _kernels[entry]
+        _kernels[entry, ignore_rounding] = dev.create_compute_kernel(program)
+    return _kernels[entry, ignore_rounding]
 
 
-def run(entry, op, a, b=None, c=None, d=None, e=None):
+def run(entry, op, a, b=None, c=None, d=None, e=None, ignore_rounding=False):
     """Evaluates op on the inputs, returns the lower bounds, the upper bounds and the float values."""
     n = len(a)
     zeros = np.zeros(n, np.float32)
     data = np.stack([np.asarray(v if v is not None else zeros, np.float32) for v in (a, b, c, d, e)], axis=1)
-    dev = device()
+    dev = device(ignore_rounding)
     usage = spy.BufferUsage.shader_resource | spy.BufferUsage.unordered_access
     inputs = dev.create_buffer(element_count=n, struct_size=20, usage=usage, data=np.ascontiguousarray(data))
     outputs = dev.create_buffer(element_count=3 * n, struct_size=4, usage=usage)
-    kernel(entry).dispatch(spy.uint3(n, 1, 1), vars={"inputs": inputs, "outputs": outputs, "op": op, "count": n})
+    kernel(entry, ignore_rounding).dispatch(spy.uint3(n, 1, 1), vars={"inputs": inputs, "outputs": outputs, "op": op, "count": n})
     dev.wait()
     out = outputs.to_numpy().view(np.float32).reshape(n, 3).astype(np.float64)
     return out[:, 0], out[:, 1], out[:, 2]
@@ -179,12 +180,15 @@ def random_ranges(rng, n):
     return a, b, e.astype(np.float32)
 
 
-def check_op(code, n=4096, samples=33, seed=0):
+def check_op(code, n=4096, samples=33, seed=0, ignore_rounding=False):
+    """Containment of the sampled values. When rounding errors are ignored, the bounds are only estimates:
+    the distance of the sampled values outside the bounds, relative to the magnitude of the inputs and of
+    the values, is returned instead (miss)."""
     name, ref, unary = OPS[code]
     rng = np.random.default_rng(seed + 1000 * code)
     a, b, e = random_ranges(rng, n)
     c, d, f = random_ranges(rng, n)
-    lo, hi, _ = run("eval_aa", code, a, b, c, d, np.maximum(e, f) if not unary else e)
+    lo, hi, _ = run("eval_aa", code, a, b, c, d, np.maximum(e, f) if not unary else e, ignore_rounding=ignore_rounding)
     e64 = (np.maximum(e, f) if not unary else e).astype(np.float64)
 
     t = np.linspace(0.0, 1.0, samples)
@@ -206,6 +210,18 @@ def check_op(code, n=4096, samples=33, seed=0):
     entire = unbounded_lo & unbounded_hi
     ok = entire | (~bad_domain & (unbounded_lo | (lo <= vmin)) & (unbounded_hi | (hi >= vmax)))
     assert not np.isnan(lo).any() and not np.isnan(hi).any(), f"{name}: NaN bounds"
+    sel = ~entire & ~bad_domain & (vmax - vmin > 1e-6 * np.maximum(np.abs(vmax), 1e-3))
+    ratio = np.median((hi[sel] - lo[sel]) / (vmax[sel] - vmin[sel])) if sel.any() else np.nan
+    if ignore_rounding:
+        assert (lo <= hi).all(), f"{name}: empty result"
+        with np.errstate(all="ignore"):
+            inputs = np.maximum(np.abs(xa), np.abs(xb))
+            if not unary:
+                inputs = np.maximum(inputs, np.maximum(np.abs(ya), np.abs(yb)))
+            scale = np.maximum(np.maximum(np.abs(vmin), np.abs(vmax)), np.maximum(inputs, 1e-3))
+            outside = np.maximum(np.maximum(np.where(unbounded_lo, 0.0, lo - vmin), np.where(unbounded_hi, 0.0, vmax - hi)), 0.0)
+            miss = np.where(entire | bad_domain | ~np.isfinite(scale), 0.0, outside / scale)
+        return {"name": name, "entire": entire.mean(), "ratio": ratio, "miss": np.nanmax(miss)}
     failures = np.flatnonzero(~ok)
     if failures.size:
         i = failures[0]
@@ -215,8 +231,6 @@ def check_op(code, n=4096, samples=33, seed=0):
         )
 
     # tightness: computed width over sampled width for bounded results of nondegenerate inputs
-    sel = ~entire & ~bad_domain & (vmax - vmin > 1e-6 * np.maximum(np.abs(vmax), 1e-3))
-    ratio = np.median((hi[sel] - lo[sel]) / (vmax[sel] - vmin[sel])) if sel.any() else np.nan
     return {"name": name, "entire": entire.mean(), "ratio": ratio}
 
 
@@ -334,6 +348,14 @@ def test_remquo_quotient():
     check_quotient()
 
 
+def test_ignore_rounding():
+    """With VUSVNA_IGNORE_ROUNDING (and fast math, the worst case), the bounds are estimates: the values may be outside by
+    rounding errors, which are amplified near poles and by cancellations."""
+    for code in OPS:
+        r = check_op(code, ignore_rounding=True)
+        assert r["miss"] <= 1e-2, f"{r['name']}: values outside the estimate by {r['miss']:.3g} (relative)"
+
+
 def test_operations():
     for code in OPS:
         check_op(code)
@@ -370,6 +392,10 @@ if __name__ == "__main__":
         except AssertionError as err:
             failed = True
             print(f"FAILED {err}")
+    worst = max((check_op(code, ignore_rounding=True) for code in OPS), key=lambda r: r["miss"])
+    status = "ok " if worst["miss"] <= 1e-2 else "FAILED"
+    failed = failed or status == "FAILED"
+    print(f"{'ignore rounding':>26}: {status} largest relative miss {worst['miss']:.3g} ({worst['name']})")
     try:
         r = check_quotient()
         print(f"{'remquo quotient':>26}: ok  known {100 * r['known']:5.1f}%")

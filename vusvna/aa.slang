@@ -7,13 +7,15 @@
  * the independent term err (reduced affine arithmetic, AF1): the number of symbols stays N, at the cost
  * of losing the correlations of these errors.
  *
+ * When VUSVNA_IGNORE_ROUNDING is defined, the rounding errors are not accumulated in err (see rounding.slang).
+ *
  * Forms whose magnitude |b| + sum |x_i| + err exceeds LIMIT = 2^60 are entire: they represent any real
  * number, and every operation on an entire form returns an entire form.
  */
 implementing vusvna;
 
 /* coefficients below the smallest normal number are set to zero, the driver may flush them anyway */
-float flush_denormal(float v) { return (f_abs(v) < MIN_NORMAL ? 0.0 : v); }
+float flush_denormal(float v) { return (!IGNORE_ROUNDING && f_abs(v) < MIN_NORMAL ? 0.0 : v); }
 
 public struct AA<let N : int> : IReal {
     /* central value */
@@ -115,7 +117,7 @@ public struct AA<let N : int> : IReal {
             r.x[i] = A.alpha * x[i];
             s += f_abs(r.x[i]);
         }
-        return finalize(r, A.delta + A.err + U * s);
+        return finalize(r, A.delta + A.err + ROUNDING_U * s);
     }
 
     /*** IReal ***/
@@ -136,7 +138,7 @@ public struct AA<let N : int> : IReal {
             r.x[i] = x[i] + o.x[i];
             s += f_abs(r.x[i]);
         }
-        return finalize(r, err + o.err + U * s);
+        return finalize(r, err + o.err + ROUNDING_U * s);
     }
 
     public AA<N> op_sub(AA<N> o) { return op_add(o.op_neg()); }
@@ -145,7 +147,7 @@ public struct AA<let N : int> : IReal {
         if (is_entire() || !is_bounded(c)) { return entire(); }
         AA<N> r = this;
         r.b = b + c;
-        return finalize(r, err + U * f_abs(r.b));
+        return finalize(r, err + ROUNDING_U * f_abs(r.b));
     }
 
     /* c - this */
@@ -166,7 +168,7 @@ public struct AA<let N : int> : IReal {
             r.x[i] = c * x[i];
             s += f_abs(r.x[i]);
         }
-        return finalize(r, f_abs(c) * err + U * s);
+        return finalize(r, f_abs(c) * err + ROUNDING_U * s);
     }
 
     public AA<N> op_divf(float c) {
@@ -179,7 +181,7 @@ public struct AA<let N : int> : IReal {
             s += f_abs(r.x[i]);
         }
         /* divisions are within 2.5 ulps, 5 u relative */
-        return finalize(r, err / f_abs(c) + 8.0 * U * s);
+        return finalize(r, err / f_abs(c) + 8.0 * ROUNDING_U * s);
     }
 
     public AA<N> op_mul(AA<N> o) {
@@ -196,7 +198,7 @@ public struct AA<let N : int> : IReal {
             r.x[i] = b * o.x[i] + o.b * x[i];
             s += f_abs(r.x[i]);
         }
-        return finalize(r, f_abs(b) * o.err + f_abs(o.b) * err + Rx * Ry + U * s);
+        return finalize(r, f_abs(b) * o.err + f_abs(o.b) * err + Rx * Ry + ROUNDING_U * s);
     }
 
     public AA<N> fn_sqr() {
@@ -212,7 +214,7 @@ public struct AA<let N : int> : IReal {
             r.x[i] = (2.0 * b) * x[i];
             s += f_abs(r.x[i]);
         }
-        return finalize(r, 2.0 * f_abs(b) * err + h + U * s);
+        return finalize(r, 2.0 * f_abs(b) * err + h + ROUNDING_U * s);
     }
 
     public AA<N> fn_reciprocal() { return apply(approx_reciprocal(affine_range(), err)); }

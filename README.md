@@ -28,9 +28,10 @@ computations. It is the partial Vulkan port of the CUDA library [cusvna](https:/
 Unlike cusvna, vusvna:
 
 * works in single precision (`float`) only, there is no `double` version,
-* only implements reduced affine arithmetic (AF1): the errors of nonlinear operations are accumulated in a
-  single error term instead of creating new noise symbols, which makes forms small and fast but gives
-  slightly wider bounds on long computations,
+* only implements reduced affine arithmetic (AF1, also available in cusvna as `cusvna::AF1`): the errors of
+  nonlinear operations are accumulated in a single error term instead of creating new noise symbols, which
+  makes forms small and fast but gives slightly wider bounds on long computations; cusvna also provides
+  standard affine arithmetic (`cusvna::AA`),
 * does not provide `asin`, `acos`, the hyperbolic functions and their inverses, `expm1`, `log1p`, `erf`,
   `erfc`, `normcdf`, `tgamma` and `lgamma`: SPIR-V either does not have them or does not give usable error
   bounds for them, so they would have to be reimplemented with validated polynomials.
@@ -136,14 +137,21 @@ the error term of `sqr(x)`. AF1 is the only mode of vusvna. cusvna provides the 
 vusvna follows the design of cusvna and its examples, but it is not exactly equivalent to it and
 the bounds computed by the two libraries differ:
 
-* **Model**: cusvna provides the same reduced forms (`AF1`) and standard affine arithmetic (`AA`), where
-  each nonlinear operation creates a new noise symbol, identified at compile time by the types of its operands and at runtime by a tag. Forms grow with
-  the computation and keep the correlations of all the approximation errors. This relies on C++ template
-  metaprogramming (the symbols of a form are part of its type) that Slang generics cannot express, so vusvna
-  only provides the reduced model with a fixed number of symbols. Its forms are much smaller and cheaper, its
-  bounds are a bit wider on long computations or wide inputs.
-* **Rounding**: cusvna bounds rounding errors with error-free transformations (TwoSum, TwoProd), vusvna with
-  the standard model of floating point arithmetic, which is more pessimistic (see [Guarantees](#guarantees)).
+* **Model**: cusvna provides reduced affine arithmetic (`cusvna::AF1`, the model of vusvna) and standard
+  affine arithmetic (`cusvna::AA`), where each nonlinear operation creates a new noise symbol, identified at
+  compile time by the types of its operands and at runtime by a tag. AA forms grow with the computation and
+  keep the correlations of all the approximation errors. This relies on C++ template metaprogramming (the
+  symbols of a form are part of its type) that Slang generics cannot express, so vusvna only provides the
+  reduced model, whose forms are much smaller and cheaper but whose bounds are a bit wider on long
+  computations or wide inputs.
+* **Rounding**: on the GPU, cusvna uses the directed rounding instructions of the hardware (`__fadd_ru`,
+  `__dmul_rd`, ...) and computes the rounding errors of affine operations exactly; in host code it emulates
+  outward rounding with error-free transformations (TwoSum, TwoProd). Vulkan has neither directed rounding
+  nor reliable error-free transformations (the driver may fuse operations), so vusvna bounds rounding errors
+  with the standard model of floating point arithmetic, which is more pessimistic (see
+  [Guarantees](#guarantees)).
+* **Ignoring rounding errors**: both libraries can ignore rounding errors for speed (`CUSVNA_IGNORE_ROUNDING`
+  and `VUSVNA_IGNORE_ROUNDING`, `--fast` option of the examples), the results are then no longer rigorous.
 * **Precision**: vusvna only supports single precision (`float`), cusvna supports `float` and `double`.
   Vulkan has optional 64-bit floats (`shaderFloat64`), but the transcendental functions of SPIR-V
   (`GLSL.std.450`) are only defined for 16 and 32-bit floats, so a double precision vusvna would have to
@@ -236,6 +244,28 @@ As a consequence:
 
 Do not compile vusvna code with the fast floating point mode of the Slang compiler (`-fp-mode fast`).
 
+### Ignoring rounding errors
+
+Defining the preprocessor macro `VUSVNA_IGNORE_ROUNDING` drops all the bounds of rounding errors: directed
+operations become plain round to nearest operations, the error bounds of the builtin functions and the safety
+margins are ignored, and the error term `err` only accumulates the approximation errors of the nonlinear
+operations. The same option exists in cusvna (`CUSVNA_IGNORE_ROUNDING`).
+
+```python
+compiler_options = spy.SlangCompilerOptions({
+    "include_paths": ["path/to/vusvna/vusvna"],
+    "defines": {"VUSVNA_IGNORE_ROUNDING": "1"},
+})
+```
+
+**The results are then estimates, not guaranteed bounds**: the values may lie slightly outside of them, by
+rounding errors that are amplified by cancellations and near poles, and a sign test may miss a root. Large
+arguments of `fmod` and `remainder` (quotients beyond `2^24`) give meaningless results. This mode is meant for
+applications where speed matters more than rigor, such as visualization: the examples run up to 1.5 times
+faster and produce almost the same images, but deep quadtree levels keep fewer cells, because in single
+precision the rounding errors become larger than the cells. Fast math is not needed and not recommended. The tests check that the estimates stay within `1e-2` of the sampled values,
+relative to the magnitude of the inputs and of the values.
+
 ## Examples
 
 The `examples` directory contains Python scripts that compile the Slang shaders of `examples/shaders` at
@@ -255,6 +285,11 @@ With the virtual environment of [Getting started](#getting-started) activated:
 ```sh
 python3 examples/02_quadtree.py
 ```
+
+`02_quadtree.py` to `05_levelset.py` take a `--fast` option that ignores rounding errors (see
+[Ignoring rounding errors](#ignoring-rounding-errors)), for instance `python3 examples/03_octree.py --fast`.
+`05_levelset.py --benchmark` times the rendering offscreen at 1 spp over the animation, with the same
+protocol as the level set example of cusvna.
 
 `04_raytracing.py [output.png]` saves the image when a file name is given. `05_levelset.py` opens a window,
 or renders offscreen with `--output image.png` (see `--help` for the time, mode, method, samples and size).

@@ -415,6 +415,33 @@ class LevelsetWindow:
         self.update_overlay(now)
 
 #------------------------------------------------------------------------------
+# Benchmark
+#------------------------------------------------------------------------------
+
+def benchmark(renderer, settings, times=tuple(range(10)), frames=10):
+    """Time of a frame at 1 spp, rendered offscreen with the default camera at the animation times 0, 1, ..., 9.
+    At each time the first frame is not timed, the time of the others is the median. The same protocol is
+    used by the level set example of cusvna."""
+    camera = make_camera()
+    settings.samples_per_pixel = 1
+    medians = []
+    for t in times:
+        settings.time = float(t)
+        settings.subframe_index = 0
+        renderer.render(settings, camera)
+        samples = []
+        for k in range(frames):
+            start = time.perf_counter()
+            renderer.render(settings, camera)
+            samples.append(time.perf_counter() - start)
+        medians.append(1000 * float(np.median(samples)))
+    logger.info(f"Level set benchmark ({renderer.width}x{renderer.height}, 1 spp, {settings.rendering_mode.name.lower()}, "
+                f"{settings.marching_method.name.lower()}): median {np.median(medians):.2f} ms per frame, "
+                f"{min(medians):.2f}-{max(medians):.2f} ms over the animation")
+    return medians
+
+
+#------------------------------------------------------------------------------
 # Main
 #------------------------------------------------------------------------------
 
@@ -427,6 +454,10 @@ if __name__ == '__main__':
     parser.add_argument("--spp", type=int, default=2, help="samples per pixel and per frame")
     parser.add_argument("--frames", type=int, default=1, help="accumulated frames (with --output)")
     parser.add_argument("--size", type=int, nargs=2, default=(1024, 768), metavar=("WIDTH", "HEIGHT"))
+    parser.add_argument("--benchmark", action="store_true",
+                        help="time the rendering offscreen at 1 spp over the animation, see benchmark()")
+    parser.add_argument("--fast", action="store_true",
+                        help="ignore rounding errors (VUSVNA_IGNORE_ROUNDING), the results are no longer rigorous")
     args = parser.parse_args()
 
     settings = Settings()
@@ -436,12 +467,14 @@ if __name__ == '__main__':
     width, height = args.size
 
     logger.info("Setting up the Vulkan ray tracing scene...")
-    device = create_device()
+    device = create_device(ignore_rounding=args.fast)
     if not (device.has_feature(spy.Feature.acceleration_structure) and device.has_feature(spy.Feature.ray_tracing)):
         logger.error("This example requires a device with hardware ray tracing support.")
         sys.exit(1)
 
-    if args.output:
+    if args.benchmark:
+        benchmark(Renderer(device, width, height), settings)
+    elif args.output:
         renderer = Renderer(device, width, height)
         camera = make_camera()
         settings.time = args.time

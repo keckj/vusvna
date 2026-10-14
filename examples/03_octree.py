@@ -5,6 +5,7 @@ import numpy as np
 from utils import *
 
 if __name__ == "__main__":
+    args = parse_example_arguments("Adaptive octree refinement around an implicit surface.")
     fname = r'f(x,y,z) = (x-2)^2(x+2)^2+(y-2)^2(y+2)^2+(z-2)^2(z+2)^2+(x^2y^2+x^2z^2+y^2z^2)+6*x*y*z-10(x^2+y^2+z^2)+22'
     logger.info(f"Generating octree for function {fname}.")
 
@@ -49,7 +50,7 @@ if __name__ == "__main__":
         mesh.vertices = o3d.utility.Vector3dVector(V)
         mesh.triangles = o3d.utility.Vector3iVector(F)
 
-    device = create_device()
+    device = create_device(ignore_rounding=args.fast)
     kernel, = load_kernels(device, "octree.slang", ("octree",))
 
     logger.info(f"Computing octree with start_level={start_level} and end_level={end_level}:")

@@ -16,11 +16,25 @@
  * is x satisfies |r - x| <= k ulp(x) + 2^-126, where k = 1/2 for correctly rounded operations, k is the
  * documented bound otherwise, and 2^-126 accounts for the flush of a denormal result. Contracting an
  * operation into a fused multiply-add only removes a rounding, the bounds remain valid.
+ *
+ * Defining VUSVNA_IGNORE_ROUNDING (for instance with the defines of the Slang compiler options) ignores all
+ * rounding errors: the directed operations below become plain round to nearest operations, the error
+ * bounds of the builtin functions and the margins of inflate are dropped, and only the approximation
+ * errors of the nonlinear operations are kept. The results are then estimates, not guaranteed bounds,
+ * and fast math is still not recommended.
  */
 implementing vusvna;
 
+#ifdef VUSVNA_IGNORE_ROUNDING
+public static const bool IGNORE_ROUNDING = true;
+#else
+public static const bool IGNORE_ROUNDING = false;
+#endif
+
 /* unit roundoff 2^-24 */
 public static const float U = 5.9604644775390625e-8;
+/* unit roundoff used in the error terms of affine forms, zero when rounding errors are ignored */
+public static const float ROUNDING_U = (IGNORE_ROUNDING ? 0.0 : U);
 /* smallest normal number 2^-126 */
 public static const float MIN_NORMAL = 1.1754943508222875e-38;
 /* all finite magnitudes stay below LIMIT = 2^60, larger values mean unbounded */
@@ -47,12 +61,16 @@ public bool is_bounded(float x) { return f_abs(x) <= LIMIT; }
 /* Upper and lower bounds of x, where r is the round to nearest result of a correctly rounded operation
    whose exact result is x. The margin covers the rounding of x, the flush of a denormal x, and the
    rounding of the addition of the margin itself. */
-public float up(float r) { return r + (f_abs(r) * UP_REL + UP_ABS); }
-public float down(float r) { return r - (f_abs(r) * UP_REL + UP_ABS); }
+public float up(float r) { return (IGNORE_ROUNDING ? r : r + (f_abs(r) * UP_REL + UP_ABS)); }
+public float down(float r) { return (IGNORE_ROUNDING ? r : r - (f_abs(r) * UP_REL + UP_ABS)); }
+
+/* bound of the rounding error of a correctly rounded result r */
+public float rounding_margin(float r) { return (IGNORE_ROUNDING ? 0.0 : f_abs(r) * 1.1920928955078125e-7 + UP_ABS); }
 
 /* Margin of a result r within k ulps of the exact result x, plus the rounding of r + margin.
    ulp(x) <= 2^-23 |x| and |x| <= |r| (1 + k 2^-23), hence |r - x| <= 2k u |r| (1 + k 2^-22). */
 float ulps_margin(float r, float k) {
+    if (IGNORE_ROUNDING) { return 0.0; }
     return f_abs(r) * (((2.0 * k + 4.0) + k * k * 9.5367431640625e-7) * U) + UP_ABS;
 }
 
@@ -61,8 +79,8 @@ public float up_ulps(float r, float k) { return r + ulps_margin(r, k); }
 public float down_ulps(float r, float k) { return r - ulps_margin(r, k); }
 
 /* bounds of x where |r - x| <= e (e >= 0) */
-public float up_abs(float r, float e) { return up(r + e); }
-public float down_abs(float r, float e) { return down(r - e); }
+public float up_abs(float r, float e) { return (IGNORE_ROUNDING ? r : up(r + e)); }
+public float down_abs(float r, float e) { return (IGNORE_ROUNDING ? r : down(r - e)); }
 
 /* Directed operations on floats. Denormal operands flushed to zero by the driver change the result of
    a product by at most 2^-126 times the other operand, hence the (|a| + |b|) 2^-125 term. */
@@ -72,10 +90,12 @@ public float sub_up(float a, float b) { return up(a - b); }
 public float sub_down(float a, float b) { return down(a - b); }
 public float mul_up(float a, float b) {
     const float p = a * b;
+    if (IGNORE_ROUNDING) { return p; }
     return p + (f_abs(p) * UP_REL + ((f_abs(a) + f_abs(b)) * 2.350988701644575e-38 + UP_ABS));
 }
 public float mul_down(float a, float b) {
     const float p = a * b;
+    if (IGNORE_ROUNDING) { return p; }
     return p - (f_abs(p) * UP_REL + ((f_abs(a) + f_abs(b)) * 2.350988701644575e-38 + UP_ABS));
 }
 
@@ -84,10 +104,12 @@ public float mul_down(float a, float b) {
 static const float DIV_ULPS = 2.5;
 public float div_up(float a, float b) {
     const float q = a / b;
+    if (IGNORE_ROUNDING) { return q; }
     return up_ulps(q, DIV_ULPS) + 2.350988701644575e-38 / f_abs(b);
 }
 public float div_down(float a, float b) {
     const float q = a / b;
+    if (IGNORE_ROUNDING) { return q; }
     return down_ulps(q, DIV_ULPS) - 2.350988701644575e-38 / f_abs(b);
 }
 
@@ -98,10 +120,12 @@ static const float SQRT_ULPS = 8.0;
 static const float SQRT_SMALL = 7.888609052210118e-31;  /* 2^-100 */
 static const float SQRT_SMALL_ROOT = 8.881784197001252e-16;  /* 2^-50 */
 public float sqrt_up(float x) {
+    if (IGNORE_ROUNDING) { return sqrt(f_max(x, 0.0)); }
     if (x <= SQRT_SMALL) { return SQRT_SMALL_ROOT; }
     return up_ulps(sqrt(x), SQRT_ULPS);
 }
 public float sqrt_down(float x) {
+    if (IGNORE_ROUNDING) { return sqrt(f_max(x, 0.0)); }
     if (x <= SQRT_SMALL) { return 0.0; }
     return f_max(down_ulps(sqrt(x), SQRT_ULPS), 0.0);
 }
@@ -111,6 +135,7 @@ public float sqrt_down(float x) {
    relative error of the summation of N + 8 terms is below (N + 8) u, the factor 1 + (4N + 32) u covers
    both with a margin, the absolute term covers the flush of up to 64 (N + 8) denormal results. */
 public float inflate(float s, int N) {
+    if (IGNORE_ROUNDING) { return s; }
     return s * (1.0 + float(4 * N + 32) * U) + float(N + 8) * 7.52316384526264e-37;
 }
 

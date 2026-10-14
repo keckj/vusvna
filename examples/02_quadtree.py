@@ -7,6 +7,7 @@ import matplotlib.patches
 from utils import *
 
 if __name__ == "__main__":
+    args = parse_example_arguments("Adaptive quadtree refinement around the zero level set of a 2D function.")
     fname = 'f(x,y) = x^2 + y^2 + x*y - 0.5*(x*y)^2 - 0.25'
     logger.info(f"Generating quadtree for function {fname}.")
 
@@ -33,7 +34,7 @@ if __name__ == "__main__":
     else:
         axes = np.full(nlevels, fill_value=None)
 
-    device = create_device()
+    device = create_device(ignore_rounding=args.fast)
     kernel, = load_kernels(device, "quadtree.slang", ("quadtree",))
 
     logger.info(f"Computing quad_tree with start_level={start_level} and end_level={end_level-1}:")

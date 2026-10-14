@@ -157,7 +157,7 @@ public Interval pow_enclosure(float x, float y) {
     const float el = f_max(l - L.a, L.b - l) * 1.0000002384185791;
     const float t = y * l;
     /* |t - y log2(x)| <= et */
-    const float et = up(mul_up(f_abs(y), el) + (f_abs(t) * 1.1920928955078125e-7 + 4.70197740328915e-38));
+    const float et = up(mul_up(f_abs(y), el) + rounding_margin(t));
     if (!(et <= 0.5) || t > EXP2_MAX) { return Interval::entire(); }
     const Interval R = exp2_enclosure(t);
     /* 2^-et >= 1 - et and 2^et <= 1 + et for 0 <= et <= 1/2 */
