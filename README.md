@@ -15,7 +15,7 @@
 providing computations with **guaranteed error bounds** in Vulkan shaders. It implements
 [affine arithmetic](https://en.wikipedia.org/wiki/Affine_arithmetic) (AA), a model that keeps track of the
 correlations between quantities and therefore yields much tighter bounds than interval arithmetic on long
-computations. It is the Vulkan port of the CUDA library [cusvna](https://github.com/keckj/cusvna).
+computations. It is the partial Vulkan port of the CUDA library [cusvna](https://github.com/keckj/cusvna).
 
 * **Rigorous**: the exact real result of a computation always lies within the computed bounds, including
   floating point rounding errors, under the weak guarantees of the Vulkan specification (no directed
