@@ -122,7 +122,8 @@ variable created with `AA<N>::variable(k, interval)`. Nonlinear operations appro
 affine function of their input, and their approximation errors, as well as all rounding errors, are
 accumulated in the independent term `err`. Forms therefore never grow and cost `N + 2` floats, but the
 correlations of these errors are lost: `sqr(x) - sqr(x)` is not zero but an interval whose radius is twice
-the error term of `sqr(x)`. AF1 is the only mode of vusvna.
+the error term of `sqr(x)`. AF1 is the only mode of vusvna. cusvna provides the same reduced forms
+(`AF1<T, N>`) and standard affine forms (`AA<T, N>`).
 
 * `AA<N>::variable(k, I)`: the input variable of symbol `k` (`0 <= k < N`), taking all values of `I`.
 * `AA<N>::from_interval(I)`: a quantity taking any value of `I`, uncorrelated with everything else.
@@ -135,8 +136,8 @@ the error term of `sqr(x)`. AF1 is the only mode of vusvna.
 vusvna follows the design of cusvna and its examples, but it is not exactly equivalent to it and
 the bounds computed by the two libraries differ:
 
-* **Model**: cusvna uses standard affine arithmetic, where each nonlinear operation creates a new noise
-  symbol, identified at compile time by the types of its operands and at runtime by a tag. Forms grow with
+* **Model**: cusvna provides the same reduced forms (`AF1`) and standard affine arithmetic (`AA`), where
+  each nonlinear operation creates a new noise symbol, identified at compile time by the types of its operands and at runtime by a tag. Forms grow with
   the computation and keep the correlations of all the approximation errors. This relies on C++ template
   metaprogramming (the symbols of a form are part of its type) that Slang generics cannot express, so vusvna
   only provides the reduced model with a fixed number of symbols. Its forms are much smaller and cheaper, its
@@ -274,21 +275,23 @@ jittered samples while the scene is paused.
 
 ### Comparison with cusvna
 
-On an RTX 5090, with the same scenes and settings as the cusvna examples (reduced affine arithmetic for vusvna,
-standard affine arithmetic for cusvna, so the timings mix the effects of the platform and of the model):
+On an RTX 5090, with the same scenes and settings as the cusvna examples, for the reduced (AF1) and standard
+(AA) affine forms of cusvna:
 
-| Example | vusvna | cusvna |
-|---|---|---|
-| `03_octree.py`, level 11 (20M active cells) | 1.1 ms | 12 ms |
-| `03_octree.py`, level 12 (81M active cells) | 5 ms | 54 ms |
-| `05_levelset.py`, 1024x768, 1 spp, shaded | 2.2 ms | 29 ms |
-| `05_levelset.py`, 1024x768, marching steps | 1.6 ms | 18 ms |
+| Example | vusvna | cusvna AF1 | cusvna AA |
+|---|---|---|---|
+| `03_octree.py`, level 11 (20M active cells) | 1.1 ms | 1.7 ms | 4.1 ms |
+| `03_octree.py`, level 12 (81M active cells) | 5 ms | 6.8 ms | 16.4 ms |
+| `05_levelset.py`, 1024x768, 1 spp, shaded | 2.2 ms | 7-9 ms | 8.5-10 ms |
+| `05_levelset.py`, 1024x768, marching steps | 1.6 ms | 4.2-6 ms | 5-6.5 ms |
 
 The images of `04_raytracing.py` match those of cusvna (no pixel differs by more than 8/255), and less than
 1% of the pixels of `05_levelset.py` differ by more than 16/255. The quadtree has the same active cells as
 cusvna up to level 12 (deeper levels keep more cells because the coordinates of the cells are single
 precision floats), the octree keeps 0.05% more cells at level 12. The reduced arithmetic loses the correlations of the nonlinear errors
-and needs a few more marching steps on some shapes, but each step is much cheaper.
+and needs a few more marching steps on some shapes, but each step is cheaper. cusvna uses the
+hardware directed rounding of CUDA and error-free transformations, which give tighter rounding bounds than
+the relative margins of vusvna, at the cost of more instructions per operation.
 
 ## Tests
 
