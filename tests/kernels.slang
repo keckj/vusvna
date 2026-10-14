@@ -40,6 +40,26 @@ T evaluate<T : IReal>(int op, T x, T y) {
     case 33: return x / 3.0;
     case 34: return 2.0 - x;
     case 35: return hypot(x, y);
+    case 36: return floor(x);
+    case 37: return ceil(x);
+    case 38: return trunc(x);
+    case 39: return round(x);
+    case 40: return rint(x);
+    case 41: return fract(x);
+    case 42: { T ip; return modf(x, ip); }
+    case 43: return fmod(x, 0.7);
+    case 44: return remainder(x, 0.7);
+    case 45: return fmod(x, y);
+    case 46: return remainder(x, y);
+    case 47: return atan2(x, y);
+    case 48: return cot(x);
+    case 49: return sinpi(x);
+    case 50: return cospi(x);
+    case 51: return exp10(x);
+    case 52: return log10(x);
+    case 53: return rcbrt(x);
+    case 54: return x - floor(x) - fract(x);
+    case 55: { T ip; const T f = modf(x, ip); return f + ip; }
     default: return x;
     }
 }
@@ -99,9 +119,37 @@ void eval_point(uint3 tid : SV_DispatchThreadID) {
     case 11: I = Interval(div_down(x, y), div_up(x, y)); break;
     case 12: I = Interval(mul_down(x, y), mul_up(x, y)); break;
     case 13: I = Interval(add_down(x, y), add_up(x, y)); break;
+    case 14: I = sinpi_enclosure(x); break;
+    case 15: I = cospi_enclosure(x); break;
+    case 16: I = exp10_enclosure(x); break;
+    case 17: I = log10_enclosure(x); break;
+    case 18: I = cot_enclosure(x); break;
+    case 19: I = rcbrt_enclosure(x); break;
+    case 20: I = point(f_round(x)); break;
+    case 21: I = point(f_rint(x)); break;
     default: I = Interval::entire(); break;
     }
     outputs[3 * i + 0] = I.a;
     outputs[3 * i + 1] = I.b;
+    outputs[3 * i + 2] = 0.0;
+}
+
+/* range of the quotient of remquo(x, c) (c = e) or remquo(x, y) (c = 0) */
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void eval_quotient(uint3 tid : SV_DispatchThreadID) {
+    const uint i = tid.x;
+    if (i >= count) { return; }
+    const Input in = inputs[i];
+    const AA<2> X = AA<2>::variable(0, Interval(in.a, in.b));
+    int lo, hi;
+    if (in.e != 0.0) {
+        remquo(X, in.e, lo, hi);
+    }
+    else {
+        remquo(X, AA<2>::variable(1, Interval(in.c, in.d)), lo, hi);
+    }
+    outputs[3 * i + 0] = float(lo);
+    outputs[3 * i + 1] = float(hi);
     outputs[3 * i + 2] = 0.0;
 }

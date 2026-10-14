@@ -43,6 +43,27 @@ public interface IReal {
     public This fn_atan();
     public This fn_pown(int n);
     public This fn_pow(float y);
+    public This fn_cot();
+    public This fn_sinpi();
+    public This fn_cospi();
+    public This fn_exp10();
+    public This fn_log10();
+    public This fn_rcbrt();
+    /* atan2(this, x) */
+    public This fn_atan2(This x);
+
+    public This fn_floor();
+    public This fn_ceil();
+    public This fn_trunc();
+    public This fn_round();
+    public This fn_rint();
+    public This fn_fract();
+    /* this - trunc(this) */
+    public This fn_modf();
+    public This fn_fmod(float c);
+    public This fn_remquo(float c, out int quo_lo, out int quo_hi);
+    public This fn_fmod_by(This y);
+    public This fn_remquo_by(This y, out int quo_lo, out int quo_hi);
 };
 
 /* plain float evaluation of generic functions */
@@ -81,6 +102,30 @@ public struct Real : IReal {
     public Real fn_atan() { return Real(atan(v)); }
     public Real fn_pown(int n) { return Real(fpown(v, n)); }
     public Real fn_pow(float y) { return Real(v > 0.0 ? exp2(y * log2(v)) : 0.0); }
+    public Real fn_cot() { return Real(cos(v) / sin(v)); }
+    public Real fn_sinpi() { return Real(sin(3.14159265358979 * reduce_period2(v))); }
+    public Real fn_cospi() { return Real(cos(3.14159265358979 * reduce_period2(v))); }
+    public Real fn_exp10() { return Real(exp2(v * 3.3219280948873622)); }
+    public Real fn_log10() { return Real(log2(v) * 0.3010299956639812); }
+    public Real fn_rcbrt() { return Real(1.0 / fn_cbrt().v); }
+    public Real fn_atan2(Real x) { return Real(atan2(v, x.v)); }
+
+    public Real fn_floor() { return Real(floor(v)); }
+    public Real fn_ceil() { return Real(ceil(v)); }
+    public Real fn_trunc() { return Real(trunc(v)); }
+    public Real fn_round() { return Real(f_round(v)); }
+    public Real fn_rint() { return Real(f_rint(v)); }
+    public Real fn_fract() { return Real(v - floor(v)); }
+    public Real fn_modf() { return Real(v - trunc(v)); }
+    public Real fn_fmod(float c) { return Real(v - trunc(v / c) * c); }
+    public Real fn_remquo(float c, out int quo_lo, out int quo_hi) {
+        const float n = f_rint(v / c);
+        quo_lo = integer_lo(n);
+        quo_hi = integer_hi(n);
+        return Real(v - n * c);
+    }
+    public Real fn_fmod_by(Real y) { return fn_fmod(y.v); }
+    public Real fn_remquo_by(Real y, out int quo_lo, out int quo_hi) { return fn_remquo(y.v, quo_lo, quo_hi); }
 };
 
 public __generic<T : IReal> __prefix T operator-(T x) { return x.op_neg(); }
@@ -117,3 +162,44 @@ public __generic<T : IReal> T atan(T x) { return x.fn_atan(); }
 public __generic<T : IReal> T pown(T x, int n) { return x.fn_pown(n); }
 /* x^y for x >= 0 */
 public __generic<T : IReal> T pow(T x, float y) { return x.fn_pow(y); }
+
+public __generic<T : IReal> T cot(T x) { return x.fn_cot(); }
+/* sin(pi x) and cos(pi x) */
+public __generic<T : IReal> T sinpi(T x) { return x.fn_sinpi(); }
+public __generic<T : IReal> T cospi(T x) { return x.fn_cospi(); }
+public __generic<T : IReal> T exp10(T x) { return x.fn_exp10(); }
+public __generic<T : IReal> T log10(T x) { return x.fn_log10(); }
+/* 1 / cbrt(x) */
+public __generic<T : IReal> T rcbrt(T x) { return x.fn_rcbrt(); }
+public __generic<T : IReal> T atan2(T y, T x) { return y.fn_atan2(x); }
+public __generic<T : IReal> T atan2(T y, float x) { return y.fn_atan2(T::from_float(x)); }
+public __generic<T : IReal> T atan2(float y, T x) { return T::from_float(y).fn_atan2(x); }
+
+/* Discontinuous functions: exact when the range of the input does not cross a discontinuity, else the
+   range of the result. round rounds ties away from zero, rint to even. */
+public __generic<T : IReal> T floor(T x) { return x.fn_floor(); }
+public __generic<T : IReal> T ceil(T x) { return x.fn_ceil(); }
+public __generic<T : IReal> T trunc(T x) { return x.fn_trunc(); }
+public __generic<T : IReal> T round(T x) { return x.fn_round(); }
+public __generic<T : IReal> T rint(T x) { return x.fn_rint(); }
+/* x - floor(x) */
+public __generic<T : IReal> T fract(T x) { return x.fn_fract(); }
+/* returns x - trunc(x) and stores trunc(x) in ip */
+public __generic<T : IReal> T modf(T x, out T ip) { ip = x.fn_trunc(); return x.fn_modf(); }
+
+/* fmod(x, y) = x - trunc(x/y) y, entire if y may be zero */
+public __generic<T : IReal> T fmod(T x, float c) { return x.fn_fmod(c); }
+public __generic<T : IReal> T fmod(T x, T y) { return x.fn_fmod_by(y); }
+public __generic<T : IReal> T fmod(float c, T y) { return T::from_float(c).fn_fmod_by(y); }
+
+/* remainder(x, y) = x - rint(x/y) y. remquo also returns the range [quo_lo, quo_hi] of the integer
+   quotient rint(x/y) (the full quotient, not only its low bits as in C), saturated to the int range:
+   quo_lo == quo_hi means that the quotient is known and the remainder is exactly x - quo y. */
+public __generic<T : IReal> T remquo(T x, float c, out int quo_lo, out int quo_hi) { return x.fn_remquo(c, quo_lo, quo_hi); }
+public __generic<T : IReal> T remquo(T x, T y, out int quo_lo, out int quo_hi) { return x.fn_remquo_by(y, quo_lo, quo_hi); }
+public __generic<T : IReal> T remquo(float c, T y, out int quo_lo, out int quo_hi) {
+    return T::from_float(c).fn_remquo_by(y, quo_lo, quo_hi);
+}
+public __generic<T : IReal> T remainder(T x, float c) { int lo, hi; return x.fn_remquo(c, lo, hi); }
+public __generic<T : IReal> T remainder(T x, T y) { int lo, hi; return x.fn_remquo_by(y, lo, hi); }
+public __generic<T : IReal> T remainder(float c, T y) { int lo, hi; return T::from_float(c).fn_remquo_by(y, lo, hi); }

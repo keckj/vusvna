@@ -244,4 +244,59 @@ public struct AA<let N : int> : IReal {
         if (y == 0.5) { return fn_sqrt(); }
         return apply(approx_pow(affine_range(), err, y));
     }
+
+    public AA<N> fn_cot() { return apply(approx_cot(affine_range(), err)); }
+    public AA<N> fn_sinpi() { return apply(approx_sinpi(affine_range(), err)); }
+    public AA<N> fn_cospi() { return apply(approx_cospi(affine_range(), err)); }
+    public AA<N> fn_exp10() { return apply(approx_exp10(affine_range(), err)); }
+    public AA<N> fn_log10() { return apply(approx_log10(affine_range(), err)); }
+    public AA<N> fn_rcbrt() { return apply(approx_rcbrt(affine_range(), err)); }
+
+    /* atan2(this, x): atan(y/x) for x > 0, +-pi/2 - atan(x/y) for y > 0 or y < 0, [-pi, pi] otherwise */
+    public AA<N> fn_atan2(AA<N> x) {
+        if (is_entire() || x.is_entire()) { return entire(); }
+        if (x.interval().a > 0.0) { return op_div(x).fn_atan(); }
+        const Interval Y = interval();
+        const AA<N> half_pi = from_interval(Interval(0.5 * PI_LO, 0.5 * PI_HI));
+        if (Y.a > 0.0) { return half_pi.op_sub(x.op_div(this).fn_atan()); }
+        if (Y.b < 0.0) { return half_pi.op_neg().op_sub(x.op_div(this).fn_atan()); }
+        return from_interval(Interval(-PI_HI, PI_HI));
+    }
+
+    /* Discontinuous functions are evaluated on the whole range of their input. They are exact (and
+       correlated with their input) when the range does not cross a discontinuity, else the result is the
+       range of the function, uncorrelated with the input. */
+    public AA<N> fn_floor() { return apply(approx_step(interval(), TO_FLOOR)); }
+    public AA<N> fn_ceil() { return apply(approx_step(interval(), TO_CEIL)); }
+    public AA<N> fn_trunc() { return apply(approx_step(interval(), TO_TRUNC)); }
+    public AA<N> fn_round() { return apply(approx_step(interval(), TO_ROUND)); }
+    public AA<N> fn_rint() { return apply(approx_step(interval(), TO_RINT)); }
+    public AA<N> fn_fract() { return apply(approx_fract(interval(), err)); }
+    public AA<N> fn_modf() { return apply(approx_modf(interval(), err)); }
+
+    /* x - n*c with n = trunc(x/c) (fmod) or n = rint(x/c) (remainder), the range of n is returned */
+    AA<N> reduce(float c, int mode, out int quo_lo, out int quo_hi) {
+        const Interval X = interval();
+        const Interval Q = quotient_range(mode, X, point(c));
+        quo_lo = integer_lo(Q.a);
+        quo_hi = integer_hi(Q.b);
+        return apply(approx_reduction(X, err, c, mode, Q));
+    }
+
+    /* the same with an affine divisor, entire if y may be zero */
+    AA<N> reduce_by(AA<N> y, int mode, out int quo_lo, out int quo_hi) {
+        const Interval X = interval();
+        const Interval Y = y.interval();
+        const Interval Q = quotient_range(mode, X, Y);
+        quo_lo = integer_lo(Q.a);
+        quo_hi = integer_hi(Q.b);
+        if (!Q.is_bounded()) { return entire(); }
+        if (Q.a == Q.b) { return op_sub(y.op_mulf(Q.a)); }
+        return from_interval(remainder_range(mode, X, Y.mag()));
+    }
+
+    public AA<N> fn_fmod(float c) { int lo, hi; return reduce(c, TO_TRUNC, lo, hi); }
+    public AA<N> fn_remquo(float c, out int quo_lo, out int quo_hi) { return reduce(c, TO_RINT, quo_lo, quo_hi); }
+    public AA<N> fn_fmod_by(AA<N> y) { int lo, hi; return reduce_by(y, TO_TRUNC, lo, hi); }
+    public AA<N> fn_remquo_by(AA<N> y, out int quo_lo, out int quo_hi) { return reduce_by(y, TO_RINT, quo_lo, quo_hi); }
 };

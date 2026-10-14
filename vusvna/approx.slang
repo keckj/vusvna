@@ -14,7 +14,7 @@
  * The functions only rely on rigorous enclosures of f and f' at points (F and DF). They are built from
  * the error bounds of the Vulkan specification (exp, exp2, log, log2, atan), or computed by vusvna
  * when the specification is too loose (sin and cos, guaranteed to 2^-11 only) or the function does not
- * exist in SPIR-V (cbrt). The approximations f and f' only choose the slopes and tangent points, their
+ * exist in SPIR-V (cbrt, exp10, sinpi, cospi). The approximations f and f' only choose the slopes and tangent points, their
  * accuracy does not matter.
  */
 implementing vusvna;
@@ -280,6 +280,73 @@ public Interval sin_enclosure(float x) { return sincos_enclosure(x, 0); }
 public Interval cos_enclosure(float x) { return sincos_enclosure(x, 1); }
 
 public Interval tan_enclosure(float x) { return sin_enclosure(x) / cos_enclosure(x); }
+public Interval cot_enclosure(float x) { return cos_enclosure(x) / sin_enclosure(x); }
+
+/* 1 / cbrt(x) */
+public Interval rcbrt_enclosure(float x) { return point(1.0) / cbrt_enclosure(x); }
+
+/* bounds of log2(10), log10(2), ln(10) and 1/ln(10) */
+static const float LOG2_10_LO = 3.321928024291992;
+static const float LOG2_10_HI = 3.3219282627105713;
+static const float LOG10_2_LO = 0.3010299801826477;
+static const float LOG10_2_HI = 0.3010300099849701;
+static const float LN10_LO = 2.3025848865509033;
+static const float LN10_HI = 2.3025851249694824;
+static const float INV_LN10_LO = 0.4342944622039795;
+static const float INV_LN10_HI = 0.4342944920063019;
+static const float EXP10_MAX = 17.0;  /* 10^17 < 2^57 */
+
+/* 10^x = 2^(x log2(10)), exp2 is increasing */
+public Interval exp10_enclosure(float x) {
+    if (x > EXP10_MAX) { return Interval::entire(); }
+    const Interval T = point(x) * Interval(LOG2_10_LO, LOG2_10_HI);
+    return Interval(exp2_enclosure(T.a).a, exp2_enclosure(T.b).b);
+}
+
+/* log10(x) = log2(x) log10(2), x > 0 is expected */
+public Interval log10_enclosure(float x) {
+    const Interval L = log2_enclosure(x);
+    if (!L.is_bounded()) { return Interval(-HUGE, -30.0); }  /* log10(2^-100) < -30.1 */
+    return L * Interval(LOG10_2_LO, LOG10_2_HI);
+}
+
+/* x - 2n where 2n is the even integer nearest to x, exact, in [-1, 1]. Floats beyond 2^24 are even. */
+float reduce_period2(float x) {
+    if (!(f_abs(x) < 16777216.0)) { return 0.0; }
+    return x - 2.0 * f_rint(x * 0.5);
+}
+
+/* sin(pi r) and cos(pi r) for 0 <= r <= 1/4, where both functions are monotonic. r = 0 may be a flushed
+   denormal, |sin(pi r)| is then below 2^-124 and cos(pi r) is in [1 - 2^-24, 1]. */
+Interval sinpi_quarter(float r) {
+    if (r == 0.0) { return Interval(-UP_ABS, UP_ABS); }
+    const Interval A = point(r) * Interval(PI_LO, PI_HI);
+    return Interval(f_max(sin_enclosure(A.a).a, 0.0), f_min(sin_enclosure(A.b).b, 1.0));
+}
+
+Interval cospi_quarter(float r) {
+    if (r == 0.0) { return Interval(0.99999994039535522, 1.0); }
+    const Interval A = point(r) * Interval(PI_LO, PI_HI);
+    return Interval(f_max(cos_enclosure(A.b).a, 0.0), f_min(cos_enclosure(f_max(A.a, 0.0)).b, 1.0));
+}
+
+/* sin(pi x) and cos(pi x), exact reduction to [0, 1/4] */
+public Interval sinpi_enclosure(float x) {
+    float r = reduce_period2(x);
+    const bool negative = (r < 0.0);
+    r = f_abs(r);
+    if (r > 0.5) { r = 1.0 - r; }  /* sinpi(r) = sinpi(1 - r), exact */
+    const Interval S = (r <= 0.25 ? sinpi_quarter(r) : cospi_quarter(0.5 - r));
+    return (negative ? -S : S);
+}
+
+public Interval cospi_enclosure(float x) {
+    float r = f_abs(reduce_period2(x));
+    bool negative = false;
+    if (r > 0.5) { r = 1.0 - r; negative = true; }  /* cospi(r) = -cospi(1 - r), exact */
+    const Interval C = (r <= 0.25 ? cospi_quarter(r) : sinpi_quarter(0.5 - r));
+    return (negative ? -C : C);
+}
 
 
 /*** function descriptors: f and f' (approximations), F and DF (rigorous enclosures at a point) ***/
@@ -305,6 +372,8 @@ interface ITrigFn : IFn {
     int kind(int m);
     /* curvature on (m * half_period, (m+1) * half_period), +1 convex, -1 concave */
     int curvature(int m);
+    /* lipschitz constant of bounded functions */
+    float lipschitz();
 };
 
 struct ExpFn : IFn {
@@ -409,6 +478,33 @@ struct CbrtFn : IFn {
     float dfinv(float d, float p, float q) { return p; }
 };
 
+struct Exp10Fn : IFn {
+    float f(float x) { return exp2(x * 3.3219280948873622); }
+    float df(float x) { return 2.302585092994046 * f(x); }
+    Interval F(float x) { return exp10_enclosure(x); }
+    Interval DF(float x) { return Interval(LN10_LO, LN10_HI) * exp10_enclosure(x); }
+    bool has_dfinv() { return true; }
+    float dfinv(float d, float p, float q) { return (d > 1.0e-30 ? log2(d * 0.43429448190325176) * 0.3010299956639812 : p); }
+};
+
+struct Log10Fn : IFn {
+    float f(float x) { return log2(x) * 0.3010299956639812; }
+    float df(float x) { return 0.43429448190325176 / x; }
+    Interval F(float x) { return log10_enclosure(x); }
+    Interval DF(float x) { return Interval(INV_LN10_LO, INV_LN10_HI) / point(x); }
+    bool has_dfinv() { return true; }
+    float dfinv(float d, float p, float q) { return (d > 1.0e-30 ? 0.43429448190325176 / d : q); }
+};
+
+struct RcbrtFn : IFn {
+    float f(float x) { return 1.0 / CbrtFn().f(x); }
+    float df(float x) { return -1.0 / (3.0 * x * CbrtFn().f(x)); }
+    Interval F(float x) { return rcbrt_enclosure(x); }
+    Interval DF(float x) { return -(F(x) / (point(3.0) * point(x))); }
+    bool has_dfinv() { return false; }
+    float dfinv(float d, float p, float q) { return p; }
+};
+
 struct AtanFn : IFn {
     float f(float x) { return atan(x); }
     float df(float x) { return 1.0 / (1.0 + x * x); }
@@ -433,6 +529,7 @@ struct SinFn : ITrigFn {
     int kind(int m) { return (pmod(m, 2) == 0 ? INFLECTION : REGULAR); }
     /* sin'' = -sin */
     int curvature(int m) { return (pmod(m, 4) < 2 ? -1 : +1); }
+    float lipschitz() { return 1.0; }
 };
 
 struct CosFn : ITrigFn {
@@ -446,6 +543,7 @@ struct CosFn : ITrigFn {
     int kind(int m) { return (pmod(m, 2) == 1 ? INFLECTION : REGULAR); }
     /* cos > 0 on (-pi/2, pi/2), cos'' = -cos */
     int curvature(int m) { return (pmod(m, 4) == 0 || pmod(m, 4) == 3 ? -1 : +1); }
+    float lipschitz() { return 1.0; }
 };
 
 struct TanFn : ITrigFn {
@@ -459,6 +557,48 @@ struct TanFn : ITrigFn {
     int kind(int m) { return (pmod(m, 2) == 0 ? INFLECTION : POLE); }
     /* tan > 0 on (0, pi/2), tan'' = 2 tan (1 + tan^2) */
     int curvature(int m) { return (pmod(m, 2) == 0 ? +1 : -1); }
+    float lipschitz() { return HUGE; }
+};
+
+struct CotFn : ITrigFn {
+    float f(float x) { return cos(x) / sin(x); }
+    float df(float x) { const float c = f(x); return -1.0 - c * c; }
+    Interval F(float x) { return cot_enclosure(x); }
+    Interval DF(float x) { return -(point(1.0) + sqr(F(x))); }
+    bool has_dfinv() { return false; }
+    float dfinv(float d, float p, float q) { return p; }
+    Interval half_period() { return half_pi(); }
+    int kind(int m) { return (pmod(m, 2) == 1 ? INFLECTION : POLE); }
+    /* cot > 0 on (0, pi/2), cot'' = 2 cot (1 + cot^2) */
+    int curvature(int m) { return (pmod(m, 2) == 0 ? +1 : -1); }
+    float lipschitz() { return HUGE; }
+};
+
+/* sin(pi x) and cos(pi x), half period 1/2 */
+struct SinpiFn : ITrigFn {
+    float f(float x) { const Interval S = sinpi_enclosure(x); return S.mid(); }
+    float df(float x) { const Interval C = cospi_enclosure(x); return 3.1415927 * C.mid(); }
+    Interval F(float x) { return sinpi_enclosure(x); }
+    Interval DF(float x) { return Interval(PI_LO, PI_HI) * cospi_enclosure(x); }
+    bool has_dfinv() { return false; }
+    float dfinv(float d, float p, float q) { return p; }
+    Interval half_period() { return point(0.5); }
+    int kind(int m) { return SinFn().kind(m); }
+    int curvature(int m) { return SinFn().curvature(m); }
+    float lipschitz() { return PI_HI; }
+};
+
+struct CospiFn : ITrigFn {
+    float f(float x) { const Interval C = cospi_enclosure(x); return C.mid(); }
+    float df(float x) { const Interval S = sinpi_enclosure(x); return -3.1415927 * S.mid(); }
+    Interval F(float x) { return cospi_enclosure(x); }
+    Interval DF(float x) { return -(Interval(PI_LO, PI_HI) * sinpi_enclosure(x)); }
+    bool has_dfinv() { return false; }
+    float dfinv(float d, float p, float q) { return p; }
+    Interval half_period() { return point(0.5); }
+    int kind(int m) { return CosFn().kind(m); }
+    int curvature(int m) { return CosFn().curvature(m); }
+    float lipschitz() { return PI_HI; }
 };
 
 
@@ -607,6 +747,13 @@ public Approx approx_exp2(Interval X, float err) {
     return approx_piece(fn, X, +1, fn.DF(xmax).b, err);
 }
 
+public Approx approx_exp10(Interval X, float err) {
+    const float xmax = add_up(X.b, err);
+    if (!X.is_bounded() || !(xmax <= EXP10_MAX)) { return Approx::make_entire(); }
+    const Exp10Fn fn;
+    return approx_piece(fn, X, +1, fn.DF(xmax).b, err);
+}
+
 /* lower bound of the inputs of logarithms, reciprocals and negative powers */
 static const float DOMAIN_MIN = 3.469446951953614e-18;  /* 2^-58 */
 
@@ -619,6 +766,7 @@ Approx approx_logarithm<Fn : IFn>(Fn fn, Interval X, float err) {
 
 public Approx approx_log(Interval X, float err) { return approx_logarithm(LogFn(), X, err); }
 public Approx approx_log2(Interval X, float err) { return approx_logarithm(Log2Fn(), X, err); }
+public Approx approx_log10(Interval X, float err) { return approx_logarithm(Log10Fn(), X, err); }
 
 /* the input is restricted to x >= 0 */
 public Approx approx_sqrt(Interval Xin, float err) {
@@ -744,6 +892,19 @@ public Approx approx_cbrt(Interval X, float err) {
     return approx_split0(fn, X, +1, -1, f_min(propagate(lip, err), holder));
 }
 
+/* the input must not contain [-2^-58, 2^-58] */
+public Approx approx_rcbrt(Interval X, float err) {
+    if (!X.is_bounded() || !(X.a >= DOMAIN_MIN || X.b <= -DOMAIN_MIN)) { return Approx::make_entire(); }
+    const RcbrtFn fn;
+    const Interval Xf = widen(X, err);
+    float lip = HUGE;
+    if (Xf.a >= DOMAIN_MIN || Xf.b <= -DOMAIN_MIN) {
+        /* |f'| is decreasing with |x| */
+        lip = fn.DF(Xf.mig()).mag();
+    }
+    return approx_piece(fn, X, (X.a > 0.0 ? +1 : -1), lip, err);
+}
+
 public Approx approx_atan(Interval X, float err) {
     if (!X.is_bounded()) { return Approx::make_entire(); }
     return approx_split0(AtanFn(), X, +1, -1, propagate(1.0, err));
@@ -761,15 +922,17 @@ Approx approx_bounded_trigo<Fn : ITrigFn>(Fn fn, Interval X, float err) {
     if (!residual_periodic(fn, alpha, X, g)) {
         return full;
     }
-    return from_residual(alpha, g, propagate(1.0, err));
+    return from_residual(alpha, g, propagate(fn.lipschitz(), err));
 }
 
 public Approx approx_sin(Interval X, float err) { return approx_bounded_trigo(SinFn(), X, err); }
 public Approx approx_cos(Interval X, float err) { return approx_bounded_trigo(CosFn(), X, err); }
+public Approx approx_sinpi(Interval X, float err) { return approx_bounded_trigo(SinpiFn(), X, err); }
+public Approx approx_cospi(Interval X, float err) { return approx_bounded_trigo(CospiFn(), X, err); }
 
-public Approx approx_tan(Interval X, float err) {
+/* tan and cot, entire if the input contains a pole */
+Approx approx_unbounded_trigo<Fn : ITrigFn>(Fn fn, Interval X, float err) {
     if (!X.is_bounded()) { return Approx::make_entire(); }
-    const TanFn fn;
     const Interval Xf = widen(X, err);
     Interval g;
     /* the widened input must not contain any pole, the derivative is then maximal at an endpoint */
@@ -783,6 +946,9 @@ public Approx approx_tan(Interval X, float err) {
     }
     return from_residual(alpha, g, propagate(lip, err));
 }
+
+public Approx approx_tan(Interval X, float err) { return approx_unbounded_trigo(TanFn(), X, err); }
+public Approx approx_cot(Interval X, float err) { return approx_unbounded_trigo(CotFn(), X, err); }
 
 /* convex piecewise linear functions f with f(0) = 0, f(x) = sa*x for x < 0 and f(x) = sb*x for x > 0 */
 Approx approx_kink(Interval X, float err, float sa, float sb) {
@@ -801,3 +967,88 @@ Approx approx_kink(Interval X, float err, float sa, float sb) {
 
 public Approx approx_abs(Interval X, float err) { return approx_kink(X, err, -1.0, 1.0); }
 public Approx approx_positive_part(Interval X, float err) { return approx_kink(X, err, 0.0, 1.0); }
+
+
+/*** discontinuous functions, X is the range of the whole input (affine part and error term) ***/
+
+/* rounding modes of the integer valued functions */
+public static const int TO_FLOOR = 0;
+public static const int TO_CEIL = 1;
+public static const int TO_TRUNC = 2;
+public static const int TO_ROUND = 3;  /* ties away from zero */
+public static const int TO_RINT = 4;   /* ties to even */
+
+public float to_integer(int mode, float x) {
+    switch (mode) {
+    case TO_FLOOR: return floor(x);
+    case TO_CEIL: return ceil(x);
+    case TO_TRUNC: return trunc(x);
+    case TO_ROUND: return f_round(x);
+    default: return f_rint(x);
+    }
+}
+
+/* non-decreasing integer valued functions, exact (and constant) when X does not cross a discontinuity */
+public Approx approx_step(Interval X, int mode) {
+    if (!X.is_bounded()) { return Approx::make_entire(); }
+    X = outward_normal(X);
+    return Approx::make_range(to_integer(mode, X.a), to_integer(mode, X.b));
+}
+
+/* x - floor(x), exactly x - n when floor(x) = n is constant over X */
+public Approx approx_fract(Interval X, float err) {
+    if (!X.is_bounded()) { return Approx::make_entire(); }
+    X = outward_normal(X);
+    const float n = floor(X.a);
+    if (n == floor(X.b)) { return Approx::make_affine(1.0, -n, err); }
+    return Approx::make_range(0.0, 1.0);
+}
+
+/* x - trunc(x), exactly x - n when trunc(x) = n is constant over X, it has the sign of x */
+public Approx approx_modf(Interval X, float err) {
+    if (!X.is_bounded()) { return Approx::make_entire(); }
+    X = outward_normal(X);
+    const float n = trunc(X.a);
+    if (n == trunc(X.b)) { return Approx::make_affine(1.0, -n, err); }
+    return Approx::make_range(X.a >= 0.0 ? 0.0 : -1.0, X.b <= 0.0 ? 0.0 : 1.0);
+}
+
+/* Range of x - n*c for all x in X, where |c| <= m: the remainder of fmod (n = trunc(x/c)) has the sign
+   of x and is smaller than |c|, the remainder of remainder (n = rint(x/c)) is at most |c|/2 in magnitude. */
+public Interval remainder_range(int mode, Interval X, float m) {
+    if (mode == TO_TRUNC) { return Interval(X.a >= 0.0 ? 0.0 : -m, X.b <= 0.0 ? 0.0 : m); }
+    const float h = mul_up(m, 0.5);
+    return Interval(-h, h);
+}
+
+/* range of the quotient n = mode(x/y) for x in X and y in Y, entire if unknown */
+public Interval quotient_range(int mode, Interval X, Interval Y) {
+    if (!X.is_bounded() || !Y.is_bounded()) { return Interval::entire(); }
+    const Interval Q = outward_normal(X / Y);
+    if (!Q.is_bounded()) { return Interval::entire(); }
+    return Interval(to_integer(mode, Q.a), to_integer(mode, Q.b));
+}
+
+/* x - n*c with n = mode(x/c) (trunc for fmod, rint for remainder), exactly x - n*c when n is constant
+   over X. Q is the range of n. */
+public Approx approx_reduction(Interval X, float err, float c, int mode, Interval Q) {
+    if (!Q.is_bounded() || !is_bounded(c)) { return Approx::make_entire(); }
+    if (Q.a == Q.b) {
+        const float n = Q.a;
+        const float p = n * c;
+        if (!is_bounded(p)) { return Approx::make_entire(); }
+        Approx r;
+        r.alpha = 1.0;
+        r.zeta = -p;
+        r.delta = f_max(sub_up(mul_up(n, c), p), sub_up(p, mul_down(n, c)));
+        r.err = err;
+        r.entire = false;
+        return r;
+    }
+    const Interval R = remainder_range(mode, X, f_abs(c));
+    return Approx::make_range(R.a, R.b);
+}
+
+/* bounds of an integer valued range as ints, saturated to the int range */
+public int integer_lo(float q) { return (q >= -2147483648.0 && q < 2147483648.0 ? int(q) : -2147483647 - 1); }
+public int integer_hi(float q) { return (q >= -2147483648.0 && q < 2147483648.0 ? int(q) : 2147483647); }

@@ -112,7 +112,11 @@ the bounds computed by the two libraries differ:
   bounds are a bit wider on long computations or wide inputs.
 * **Rounding**: cusvna bounds rounding errors with error-free transformations (TwoSum, TwoProd), vusvna with
   the standard model of floating point arithmetic, which is more pessimistic (see [Guarantees](#guarantees)).
-* **Functions**: vusvna only implements a subset of the functions of cusvna (see below).
+* **Precision**: vusvna only supports single precision (`float`), cusvna supports `float` and `double`.
+  Vulkan has optional 64-bit floats (`shaderFloat64`), but the transcendental functions of SPIR-V
+  (`GLSL.std.450`) are only defined for 16 and 32-bit floats, so a double precision vusvna would have to
+  implement all of them itself.
+* **Functions**: vusvna implements a subset of the functions of cusvna (see below).
 
 ## Supported operations
 
@@ -124,9 +128,15 @@ the bounds computed by the two libraries differ:
 | `sqrt(x)`, `rsqrt(x)`, `cbrt(x)` | `sqrt` is evaluated on the part of its input where `x >= 0` |
 | `pow(x, float y)` | for `x >= 0` (`x > 0` if `y < 0`) |
 | `pow(x, y)` with an affine exponent | `exp(y*log(x))`, for `x > 0` |
-| `exp(x)`, `exp2(x)`, `log(x)`, `log2(x)` | |
-| `sin(x)`, `cos(x)`, `tan(x)`, `atan(x)` | `tan` is entire if a pole belongs to `x` |
+| `rcbrt(x)` | `1/cbrt(x)`, entire if `0` belongs to `x` |
+| `exp(x)`, `exp2(x)`, `exp10(x)`, `log(x)`, `log2(x)`, `log10(x)` | |
+| `sin(x)`, `cos(x)`, `tan(x)`, `cot(x)`, `atan(x)` | `tan` and `cot` are entire if a pole belongs to `x` |
+| `sinpi(x)`, `cospi(x)` | `sin(pi x)` and `cos(pi x)`, with an exact argument reduction |
+| `atan2(y, x)` | `atan(y/x)` for `x > 0`, `+-pi/2 - atan(x/y)` for `y > 0` or `y < 0`, else `[-pi, pi]` |
 | `abs(x)`, `positive_part(x)` | `positive_part(x) = max(x, 0)` |
+| `floor(x)`, `ceil(x)`, `trunc(x)`, `round(x)`, `rint(x)` | `round` rounds ties away from zero, `rint` to even |
+| `fract(x)`, `modf(x, out ip)` | `x - floor(x)`, and `x - trunc(x)` with `ip = trunc(x)` |
+| `fmod(x, y)`, `remainder(x, y)`, `remquo(x, y, out lo, out hi)` | `y` float or affine, entire if `0` belongs to `y` |
 | `min(x, y)`, `max(x, y)`, `clamp(x, lo, hi)` | `(x + y -+ abs(x - y))/2` |
 | `hypot(x, y)`, `hypot(x, y, z)`, `rhypot` | |
 | `lerp(a, b, t)`, `smoothstep(e0, e1, x)` | |
@@ -134,9 +144,23 @@ the bounds computed by the two libraries differ:
 | `certainly_lt`, `certainly_le`, `certainly_gt`, `certainly_ge`, `possibly_zero` | rigorous predicates |
 | `join`, `intersect`, `contains`, `subset`, `is_empty`, `+`, `-`, `*`, `/`, `sqr`, `sqrt`, `abs` | on `Interval` |
 
-All of them are generic over `T : IReal` and also work on `Real`. The other functions of cusvna (`asin`,
-`acos`, `atan2`, hyperbolic functions, `erf`, `tgamma`, `floor` and friends, `fmod`, `remainder`, ...) are
-not ported yet.
+All of them are generic over `T : IReal` and also work on `Real`.
+
+The discontinuous functions (`floor` to `remquo`) are evaluated on the whole range of their input. When the
+range does not cross a discontinuity, the result is exact and stays correlated with the input (`fract(x)` is
+then `x - n`), otherwise it is the range of the function, uncorrelated with the input. `fmod(x, y)` is
+`x - trunc(x/y) y` and `remainder(x, y)` is `x - rint(x/y) y`; `remquo` also returns the range `[lo, hi]` of
+the integer quotient `rint(x/y)` (the full quotient, not only its low bits as in C), saturated to the `int`
+range. `lo == hi` means that the quotient is known.
+
+The following functions of cusvna are not available, because SPIR-V either does not provide them or gives no
+usable error bounds for them, so vusvna would have to implement them with validated polynomials as it does
+for `sin` and `cos`:
+
+* `asin`, `acos`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`: the precision of the SPIR-V
+  functions is only inherited from their defining formulas (for instance `asin(x)` from
+  `atan2(x, sqrt(1 - x*x))`), which gives very loose bounds near `0` or near the ends of their domains,
+* `expm1`, `log1p`, `erf`, `erfc`, `normcdf`, `tgamma`, `lgamma`: these functions do not exist in SPIR-V.
 
 ## Guarantees
 
@@ -167,7 +191,13 @@ As a consequence:
   points. These enclosures use the bounds of the specification for `exp`, `exp2`, `log`, `log2` and `atan`.
   `sin` and `cos` (only guaranteed to `2^-11` by the specification) are computed by vusvna with a
   Cody-Waite reduction and Taylor polynomials, `cbrt` (not in SPIR-V) with a Newton step validated by
-  cubing its bounds.
+  cubing its bounds. The functions missing from SPIR-V are built from these enclosures: `exp10` and `log10`
+  from `exp2` and `log2` with rigorous bounds of `log2(10)` and `log10(2)`, `sinpi` and `cospi` from `sin`
+  and `cos` after an exact reduction to `[0, 1/4]`.
+* **Integer valued functions**: `floor`, `ceil` and `trunc` are exact in SPIR-V. The tie breaking rule of
+  the builtin `round` is implementation defined, so `round` and `rint` are computed from `floor` and
+  `trunc`. Denormal bounds are moved outward to `-+2^-126` before evaluating these functions, since the
+  driver may flush them to zero.
 * **Domains**: if an input range is not entirely inside the domain of a function, the result is entire,
   except for `sqrt` and `pow(x, float y)` which are evaluated on the part of their input inside their domain
   when it is not empty.

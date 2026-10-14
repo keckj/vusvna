@@ -113,3 +113,28 @@ public float sqrt_down(float x) {
 public float inflate(float s, int N) {
     return s * (1.0 + float(4 * N + 32) * U) + float(N + 8) * 7.52316384526264e-37;
 }
+
+/* Rounding to integers. floor, ceil and trunc are exact in SPIR-V, the tie breaking rule of the builtin
+   round is implementation defined: round (ties away from zero) and rint (ties to even) are built from
+   floor and trunc, where x - floor(x) and x - trunc(x) are exact. Floats beyond 2^23 are integers. */
+public float f_round(float x) {
+    const float t = trunc(x);
+    return (f_abs(x - t) >= 0.5 ? t + (x < 0.0 ? -1.0 : 1.0) : t);
+}
+
+public float f_rint(float x) {
+    const float t = floor(x);
+    const float d = x - t;
+    if (d > 0.5) { return t + 1.0; }
+    if (d == 0.5 && floor(t * 0.5) != t * 0.5) { return t + 1.0; }
+    return t;
+}
+
+/* Interval whose endpoints are not denormal, so that functions evaluated at the endpoints see the same
+   values as the exact functions even if the driver flushes their inputs. Negative denormal lower bounds
+   and positive denormal upper bounds are moved outward to -+2^-126. The other denormals may be flushed
+   to zero, which moves them outward and keeps the bounds of non-decreasing functions valid. */
+public Interval outward_normal(Interval X) {
+    return Interval((X.a < 0.0 && X.a > -MIN_NORMAL) ? -MIN_NORMAL : X.a,
+                    (X.b > 0.0 && X.b < MIN_NORMAL) ? MIN_NORMAL : X.b);
+}
