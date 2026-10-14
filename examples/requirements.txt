@@ -5,3 +5,4 @@ Pillow
 open3d
 scikit-image
 screeninfo
+PySide6
