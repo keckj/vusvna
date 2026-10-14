@@ -52,6 +52,8 @@ The examples and the tests only need a Vulkan GPU and Python: they compile the S
 ```sh
 git clone https://github.com/keckj/vusvna.git
 cd vusvna
+python3 -m venv .venv
+source .venv/bin/activate           # on Windows: .venv\Scripts\activate
 python3 -m pip install -r examples/requirements.txt
 python3 examples/02_quadtree.py   # adaptive quadtree around a 2D curve
 python3 examples/05_levelset.py   # interactive ray tracing of animated level sets (needs ray tracing)
@@ -247,10 +249,10 @@ runtime and run them with slangpy:
 | `04_raytracing.py` | ray tracing of implicit surfaces with Vulkan ray tracing (procedural primitives) |
 | `05_levelset.py` | interactive viewer of animated level sets |
 
+With the virtual environment of [Getting started](#getting-started) activated:
+
 ```sh
-git clone https://github.com/keckj/vusvna.git
-python3 -m pip install -r vusvna/examples/requirements.txt
-python3 vusvna/examples/02_quadtree.py
+python3 examples/02_quadtree.py
 ```
 
 `04_raytracing.py [output.png]` saves the image when a file name is given. `05_levelset.py` opens a window,
