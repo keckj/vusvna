@@ -244,7 +244,21 @@ As a consequence:
 
 Do not compile vusvna code with the fast floating point mode of the Slang compiler (`-fp-mode fast`).
 
-### Ignoring rounding errors
+### Rounding modes
+
+vusvna has two rounding modes, selected at compile time:
+
+| Mode | Selected by | Rigorous | Speed | Use |
+|---|---|---|---|---|
+| rigorous | default | yes | reference | everything |
+| ignore | `VUSVNA_IGNORE_ROUNDING` | **no** | up to 1.5 times faster | visualization |
+
+In the default mode, rounding errors are bounded with the standard model as described above. cusvna has a
+third mode: on CUDA devices it uses the directed rounding instructions of the hardware and computes exact
+rounding errors, and it emulates them with error-free transformations in host code (or with
+`CUSVNA_EMULATED_ROUNDING`); neither is possible in Vulkan.
+
+#### Ignoring rounding errors
 
 Defining the preprocessor macro `VUSVNA_IGNORE_ROUNDING` drops all the bounds of rounding errors: directed
 operations become plain round to nearest operations, the error bounds of the builtin functions and the safety
@@ -263,8 +277,9 @@ rounding errors that are amplified by cancellations and near poles, and a sign t
 arguments of `fmod` and `remainder` (quotients beyond `2^24`) give meaningless results. This mode is meant for
 applications where speed matters more than rigor, such as visualization: the examples run up to 1.5 times
 faster and produce almost the same images, but deep quadtree levels keep fewer cells, because in single
-precision the rounding errors become larger than the cells. Fast math is not needed and not recommended. The tests check that the estimates stay within `1e-2` of the sampled values,
-relative to the magnitude of the inputs and of the values.
+precision the rounding errors become larger than the cells. Fast math is not needed and not recommended.
+The tests check that the estimates stay within `1e-2` of the sampled values, relative to the magnitude of
+the inputs and of the values.
 
 ## Examples
 
@@ -311,22 +326,25 @@ jittered samples while the scene is paused.
 ### Comparison with cusvna
 
 On an RTX 5090, with the same scenes and settings as the cusvna examples, for the reduced (AF1) and standard
-(AA) affine forms of cusvna:
+(AA) affine forms of cusvna, with rounding errors bounded (rigorous) and ignored (`--fast`). `05_levelset.py`
+is timed with `--benchmark` in both libraries (1024x768, 1 spp, root window marching, median over the
+animation):
 
-| Example | vusvna | cusvna AF1 | cusvna AA |
-|---|---|---|---|
-| `03_octree.py`, level 11 (20M active cells) | 1.1 ms | 1.7 ms | 4.1 ms |
-| `03_octree.py`, level 12 (81M active cells) | 5 ms | 6.8 ms | 16.4 ms |
-| `05_levelset.py`, 1024x768, 1 spp, shaded | 2.2 ms | 7-9 ms | 8.5-10 ms |
-| `05_levelset.py`, 1024x768, marching steps | 1.6 ms | 4.2-6 ms | 5-6.5 ms |
+| Example | vusvna | cusvna AF1 | cusvna AA | vusvna `--fast` | cusvna AF1 `--fast` | cusvna AA `--fast` |
+|---|---|---|---|---|---|---|
+| `03_octree.py`, level 11 (20M active cells) | 1.0 ms | 1.7 ms | 4.2 ms | 0.69 ms | 0.70 ms | 3.2 ms |
+| `03_octree.py`, level 12 (81M active cells) | 4.2 ms | 7.0 ms | 17 ms | 3.0 ms | 2.8 ms | 13 ms |
+| `05_levelset.py`, shaded | 2.2 ms | 7.2 ms | 8.3 ms | 1.6 ms | 6.3 ms | 6.9 ms |
+| `05_levelset.py`, marching steps | 1.5 ms | 4.4 ms | 5.1 ms | 1.1 ms | 3.7 ms | 4.2 ms |
 
-The images of `04_raytracing.py` match those of cusvna (no pixel differs by more than 8/255), and less than
-1% of the pixels of `05_levelset.py` differ by more than 16/255. The quadtree has the same active cells as
-cusvna up to level 12 (deeper levels keep more cells because the coordinates of the cells are single
-precision floats), the octree keeps 0.05% more cells at level 12. The reduced arithmetic loses the correlations of the nonlinear errors
-and needs a few more marching steps on some shapes, but each step is cheaper. cusvna uses the
-hardware directed rounding of CUDA and error-free transformations, which give tighter rounding bounds than
-the relative margins of vusvna, at the cost of more instructions per operation.
+The images of `04_raytracing.py` match those of cusvna (no pixel differs by more than 8/255). In
+`05_levelset.py`, 0.001% of the pixels of the shaded image and 0.6% of the pixels of the marching steps
+image differ by more than 16/255: both libraries need the same number of marching steps. The quadtree has the
+same active cells as cusvna up to level 12 (deeper levels keep more cells because the coordinates of the
+cells are single precision floats), the octree keeps 0.05% more cells at level 12. With rounding errors
+ignored, the octree runs at the same speed in both libraries: the rigorous gap comes from the rounding
+errors, which cusvna computes exactly with more instructions per operation. The level set example is 3 to 4
+times faster in vusvna in both modes.
 
 ## Tests
 
