@@ -52,10 +52,10 @@ The examples and the tests only need a Vulkan GPU and Python: they compile the S
 ```sh
 git clone https://github.com/keckj/vusvna.git
 cd vusvna
-pip install -r examples/requirements.txt
-python examples/02_quadtree.py     # adaptive quadtree around a 2D curve
-python examples/05_levelset.py     # interactive ray tracing of animated level sets (needs ray tracing)
-python tests/test_vusvna.py        # check the enclosures on your GPU
+python3 -m pip install -r examples/requirements.txt
+python3 examples/02_quadtree.py   # adaptive quadtree around a 2D curve
+python3 examples/05_levelset.py   # interactive ray tracing of animated level sets (needs ray tracing)
+python3 tests/test_vusvna.py      # check the enclosures on your GPU
 ```
 
 See [Examples](#examples) for the other scripts and [Installation](#installation) to use vusvna in your own
@@ -249,8 +249,8 @@ runtime and run them with slangpy:
 
 ```sh
 git clone https://github.com/keckj/vusvna.git
-pip install -r vusvna/examples/requirements.txt
-python vusvna/examples/02_quadtree.py
+python3 -m pip install -r vusvna/examples/requirements.txt
+python3 vusvna/examples/02_quadtree.py
 ```
 
 `04_raytracing.py [output.png]` saves the image when a file name is given. `05_levelset.py` opens a window,
@@ -296,7 +296,7 @@ degenerate), and report the median ratio between the computed and sampled widths
 (between 1.0 and 1.2 for most operations).
 
 ```sh
-pytest tests                  # or: python tests/test_vusvna.py for a report
+python3 -m pytest tests        # or: python3 tests/test_vusvna.py for a report
 ```
 
 ## License
