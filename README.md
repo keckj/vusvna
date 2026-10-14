@@ -53,7 +53,7 @@ The examples and the tests only need a Vulkan GPU and Python: they compile the S
 git clone https://github.com/keckj/vusvna.git
 cd vusvna
 python3 -m venv .venv
-source .venv/bin/activate           # on Windows: .venv\Scripts\activate
+source .venv/bin/activate         # on Windows: .venv\Scripts\activate
 python3 -m pip install -r examples/requirements.txt
 python3 examples/02_quadtree.py   # adaptive quadtree around a 2D curve
 python3 examples/05_levelset.py   # interactive ray tracing of animated level sets (needs ray tracing)
