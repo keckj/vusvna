@@ -15,8 +15,7 @@
 providing computations with **guaranteed error bounds** in Vulkan shaders. It implements
 [affine arithmetic](https://en.wikipedia.org/wiki/Affine_arithmetic) (AA), a model that keeps track of the
 correlations between quantities and therefore yields much tighter bounds than interval arithmetic on long
-computations. It is the Vulkan port of [cusvna](https://github.com/keckj/cusvna), restricted to reduced
-affine arithmetic (AF1), see [Differences with cusvna](#differences-with-cusvna).
+computations. It is the Vulkan port of the CUDA library [cusvna](https://github.com/keckj/cusvna).
 
 * **Rigorous**: the exact real result of a computation always lies within the computed bounds, including
   floating point rounding errors, under the weak guarantees of the Vulkan specification (no directed
@@ -26,8 +25,15 @@ affine arithmetic (AF1), see [Differences with cusvna](#differences-with-cusvna)
 * **Generic**: functions written once for a type `T : IReal` are evaluated on affine forms to bound them
   and on floats to compute their values.
 
-Limitations compared to cusvna: single precision only (no `double`), reduced affine arithmetic only (AF1),
-and a subset of the functions, see [Differences with cusvna](#differences-with-cusvna).
+Unlike cusvna, vusvna:
+
+* works in single precision (`float`) only, there is no `double` version,
+* only implements reduced affine arithmetic (AF1): the errors of nonlinear operations are accumulated in a
+  single error term instead of creating new noise symbols, which makes forms small and fast but gives
+  slightly wider bounds on long computations,
+* does not provide all the functions of cusvna.
+
+See [Differences with cusvna](#differences-with-cusvna) for details.
 
 Typical applications are robust root isolation and subdivision schemes (quadtrees, octrees), ray tracing
 of implicit surfaces and level sets, and any numerical method that must not miss a solution.
