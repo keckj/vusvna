@@ -31,7 +31,9 @@ Unlike cusvna, vusvna:
 * only implements reduced affine arithmetic (AF1): the errors of nonlinear operations are accumulated in a
   single error term instead of creating new noise symbols, which makes forms small and fast but gives
   slightly wider bounds on long computations,
-* does not provide all the functions of cusvna.
+* does not provide `asin`, `acos`, the hyperbolic functions and their inverses, `expm1`, `log1p`, `erf`,
+  `erfc`, `normcdf`, `tgamma` and `lgamma`: SPIR-V either does not have them or does not give usable error
+  bounds for them, so they would have to be reimplemented with validated polynomials.
 
 See [Differences with cusvna](#differences-with-cusvna) for details.
 
