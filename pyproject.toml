@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vusvna"
+dynamic = ["version"]
+description = "Slang module for rigorous affine arithmetic with guaranteed error bounds in Vulkan shaders."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jean-Baptiste Keck", email = "jbkeck@hotmail.com" }]
+keywords = ["vulkan", "slang", "slangpy", "gpu", "shaders", "affine arithmetic", "interval arithmetic", "range analysis"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+
+[project.urls]
+Repository = "https://github.com/keckj/vusvna"
+Issues = "https://github.com/keckj/vusvna/issues"
+
+[tool.setuptools]
+packages = ["vusvna"]
+package-dir = { "" = "python" }
+
+[tool.setuptools.dynamic]
+version = { attr = "vusvna.__version__" }

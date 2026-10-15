@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="logo/vusvna-logo.svg" alt="vusvna" width="600">
+  <img src="https://raw.githubusercontent.com/keckj/vusvna/main/logo/vusvna-logo.svg" alt="vusvna" width="600">
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/keckj/vusvna/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="#installation"><img src="https://img.shields.io/badge/Vulkan-ray%20tracing-AC162C?logo=vulkan&logoColor=white" alt="Vulkan"></a>
   <a href="#installation"><img src="https://img.shields.io/badge/Slang-module-4B6BFB" alt="Slang module"></a>
   <a href="#examples"><img src="https://img.shields.io/badge/slangpy-examples-3776AB?logo=python&logoColor=white" alt="slangpy examples"></a>
@@ -42,7 +42,7 @@ Typical applications are robust root isolation and subdivision schemes (quadtree
 of implicit surfaces and level sets, and any numerical method that must not miss a solution.
 
 <p align="center">
-  <img src="figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
+  <img src="https://raw.githubusercontent.com/keckj/vusvna/main/figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
 </p>
 
 ## Getting started
@@ -100,6 +100,21 @@ import slangpy as spy
 
 device = spy.Device(type=spy.DeviceType.vulkan,
                     compiler_options=spy.SlangCompilerOptions({"include_paths": ["path/to/vusvna/vusvna"]}))
+```
+
+The Slang module is also available as a Python package:
+
+```sh
+python3 -m pip install vusvna
+python3 -m vusvna --include   # directory to add to the include paths of the Slang compiler
+```
+
+```python
+import slangpy as spy
+import vusvna
+
+device = spy.Device(type=spy.DeviceType.vulkan,
+                    compiler_options=spy.SlangCompilerOptions({"include_paths": [vusvna.get_include()]}))
 ```
 
 Requirements:
@@ -359,4 +374,4 @@ python3 -m pytest tests        # or: python3 tests/test_vusvna.py for a report
 
 ## License
 
-vusvna is released under the [MIT License](LICENSE).
+vusvna is released under the [MIT License](https://github.com/keckj/vusvna/blob/main/LICENSE).
