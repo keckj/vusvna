@@ -7,7 +7,7 @@ Slang compiler (slangpy: SlangCompilerOptions({"include_paths": [vusvna.get_incl
 
 import os
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 _package_dir = os.path.dirname(os.path.abspath(__file__))
 
