@@ -45,6 +45,11 @@ of implicit surfaces and level sets, and any numerical method that must not miss
   <img src="https://raw.githubusercontent.com/keckj/vusvna/main/figures/levelset.jpg" alt="Level sets ray traced with affine arithmetic" width="800">
 </p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/keckj/vusvna/main/figures/enclosures.png" alt="Guaranteed enclosures of a curve and adaptive quadtree around a level set" width="800">
+  <br><em>Left: guaranteed enclosures of a function on 12 and 48 intervals. Right: adaptive quadtree around an implicit curve, cells proven empty are discarded at each level. Computed on the GPU with <code>AA&lt;1&gt;</code> (1D) and <code>AA&lt;2&gt;</code> (2D) in a Slang compute shader.</em>
+</p>
+
 ## Getting started
 
 The examples and the tests only need a Vulkan GPU and Python: they compile the Slang shaders at runtime with
